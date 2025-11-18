@@ -1,0 +1,12 @@
+[package]
+name = "replay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+parallel-exec = { path = "../" }
+clap = {version = "4", default-features = false, features = ["help", "suggestions", "color", "std", "cargo", "derive"]}
+tokio = {version = "1", features = ["full"]}
+serde_json = "1"
+serde = {version = "1", features = ["derive"]}
+primitive-types = "0.14.0"
