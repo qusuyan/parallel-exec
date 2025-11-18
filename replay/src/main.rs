@@ -1,5 +1,6 @@
 use parallel_exec::{Block, MockTransaction, SequentialVM, StateDBOp, VM};
 
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use tokio::fs::File;
@@ -14,6 +15,10 @@ struct Args {
     // Define your command line arguments here
     #[clap(short = 'f', long)]
     trace_file: String,
+
+    // Number of worker threads
+    #[clap(short = 't', long, default_value = "4")]
+    threads: usize,
 }
 
 fn parse_op(op: &str, state_key: &str, aux: &str) -> StateDBOp {
@@ -82,7 +87,14 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> StateDBOp {
 fn main() {
     let args = Args::parse();
 
-    let rt = Builder::new_current_thread().enable_all().build().unwrap();
+    let rt = Builder::new_multi_thread()
+        .worker_threads(args.threads)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let mut times = HashMap::new();
+
     rt.block_on(async {
         let file = File::open(args.trace_file).await.unwrap();
         let reader = BufReader::new(file);
@@ -103,7 +115,7 @@ fn main() {
                 Some((cur_blk_id, cur_txn_id)) => {
                     if cur_blk_id != blk_id || cur_txn_id != txn_id {
                         let new_txn = MockTransaction::new(
-                            u64::from_str(&cur_txn_id).unwrap(),
+                            u64::from_str_radix(&cur_txn_id, 16).unwrap(),
                             std::time::Duration::from_secs(0), // TODO
                             std::mem::take(&mut cur_ops),
                         );
@@ -120,13 +132,17 @@ fn main() {
                             cur_block.len()
                         );
 
+                        let blk_id_parsed = u64::from_str(cur_blk_id).unwrap();
                         let new_block = Block {
-                            id: u64::from_str(cur_blk_id).unwrap(),
+                            id: blk_id_parsed,
                             transactions: std::mem::take(&mut cur_block),
                         };
 
                         let vm = SequentialVM::new();
+                        let start = std::time::Instant::now();
                         vm.process(new_block).await;
+                        let duration = start.elapsed();
+                        times.insert(blk_id_parsed, duration);
                     }
 
                     *cur_blk_id = blk_id.to_string();
@@ -157,13 +173,22 @@ fn main() {
                 cur_block.len()
             );
 
+            let blk_id_parsed = u64::from_str(cur_blk_id).unwrap();
             let new_block = Block {
-                id: u64::from_str(cur_blk_id).unwrap(),
+                id: blk_id_parsed,
                 transactions: std::mem::take(&mut cur_block),
             };
 
             let vm = SequentialVM::new();
+            let start = std::time::Instant::now();
             vm.process(new_block).await;
+            let duration = start.elapsed();
+            times.insert(blk_id_parsed, duration);
         }
     });
+
+    // Print timing results
+    for (blk_id, duration) in times.iter() {
+        println!("Block {}: {:?}", blk_id, duration);
+    }
 }
