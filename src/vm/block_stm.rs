@@ -1,5 +1,6 @@
-use super::VM;
-use crate::{Block, StateDB};
+use super::{VM, VMError};
+use crate::Block;
+use crate::statedb::StateDB;
 
 use tokio::task::JoinHandle;
 
@@ -35,7 +36,7 @@ impl Drop for BlockSTMVM {
 
 #[async_trait::async_trait]
 impl VM for BlockSTMVM {
-    async fn process(&self, block: Block) {
+    async fn process(&self, block: Block) -> Result<(), VMError> {
         // Implementation of BlockSTM processing logic goes here
         // This is a placeholder for the actual STM logic
         unimplemented!();

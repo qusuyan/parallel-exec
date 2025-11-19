@@ -1,13 +1,13 @@
 mod txn;
 use std::sync::Arc;
 
-pub use txn::{MockTransaction, StateDBOp, Transaction, WriteOp};
+pub use txn::{MockTransaction, Transaction, WriteOp};
 
 mod statedb;
-use statedb::StateDB;
+pub use statedb::{RevisionStrategy, StateDBOp};
 
 mod vm;
-pub use vm::{SequentialVM, SequentialValidationVM, VM};
+pub use vm::{SequentialVM, SequentialValidationVM, VM, VMType};
 
 use primitive_types::U256;
 

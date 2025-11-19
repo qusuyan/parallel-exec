@@ -1,6 +1,5 @@
-use parallel_exec::{Block, MockTransaction, SequentialVM, SequentialValidationVM, StateDBOp, VM};
+use parallel_exec::{Block, MockTransaction, RevisionStrategy, StateDBOp, VMType};
 
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -11,38 +10,29 @@ use tokio::runtime::Builder;
 use clap::Parser;
 use primitive_types::U256;
 
+const GENESIS_ACCOUNT: U256 = U256([0, 0, 0x01000000, 0]);
+
 #[derive(Parser)]
 struct Args {
-    // IO trace file
+    /// IO trace file
     #[clap(short = 'f', long)]
     trace_file: String,
 
-    // Latency file
+    /// Latency file
     #[clap(short = 'l', long)]
     lat_file: String,
 
-    // Number of worker threads
+    /// Number of worker threads
     #[clap(short = 't', long, default_value = "4")]
     threads: usize,
 
-    // VM type
+    /// VM type
     #[clap(short = 'e', long, default_value = "sequential")]
     vm_type: VMType,
-}
 
-#[derive(clap::ValueEnum, Clone, Debug)]
-enum VMType {
-    Sequential,
-    SequentialValidation,
-}
-
-impl VMType {
-    fn new(&self) -> Box<dyn VM> {
-        match self {
-            VMType::Sequential => Box::new(SequentialVM::new()),
-            VMType::SequentialValidation => Box::new(SequentialValidationVM::new()),
-        }
-    }
+    /// Revision type
+    #[clap(short = 'r', long, default_value = "basic")]
+    revision_strategy: RevisionStrategy,
 }
 
 fn parse_op(op: &str, state_key: &str, aux: &str) -> StateDBOp {
@@ -117,7 +107,7 @@ fn main() {
         .build()
         .unwrap();
 
-    let vm = args.vm_type.new();
+    let vm = args.vm_type.new(args.revision_strategy);
     let mut times = Vec::new();
 
     rt.block_on(async {
@@ -180,7 +170,7 @@ fn main() {
                         };
 
                         let start = std::time::Instant::now();
-                        vm.process(new_block).await;
+                        vm.process(new_block).await.unwrap();
                         let duration = start.elapsed();
                         times.push((blk_id_parsed, duration));
                     }
@@ -194,7 +184,9 @@ fn main() {
             }
 
             let operation = parse_op(op, state_key, aux);
-            cur_ops.push(operation);
+            if !matches!(operation, StateDBOp::AddBalance(addr, _) if addr == GENESIS_ACCOUNT) {
+                cur_ops.push(operation);
+            }
         }
 
         // Process the last transaction and block
@@ -220,7 +212,7 @@ fn main() {
             };
 
             let start = std::time::Instant::now();
-            vm.process(new_block).await;
+            vm.process(new_block).await.unwrap();
             let duration = start.elapsed();
             times.push((blk_id_parsed, duration));
         }

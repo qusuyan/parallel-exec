@@ -1,10 +1,10 @@
 mod mock;
-pub use mock::{MockTransaction, StateDBOp};
+pub use mock::MockTransaction;
+
+use crate::Value;
+use crate::statedb::{RevisionStrategy, StateDB, StateDBError, ValidationSets};
 
 use async_trait::async_trait;
-use std::collections::HashMap;
-
-use crate::{Key, StateDB, Value, Version};
 
 #[derive(Clone, Debug)]
 pub enum WriteOp {
@@ -12,13 +12,23 @@ pub enum WriteOp {
     Inc(Value, bool), // bool indicates increment or decrement
 }
 
-pub struct ExecResult {
-    pub read_set: HashMap<Key, Version>,
-    pub write_set: HashMap<Key, WriteOp>,
+#[derive(Debug)]
+pub enum TxnError {
+    StateDBError(StateDBError),
+}
+
+impl From<StateDBError> for TxnError {
+    fn from(err: StateDBError) -> Self {
+        TxnError::StateDBError(err)
+    }
 }
 
 #[async_trait]
 pub trait Transaction {
     fn id(&self) -> u64;
-    async fn execute(&self, statedb: &StateDB) -> ExecResult;
+    async fn execute(
+        &self,
+        statedb: &StateDB,
+        revision_strategy: RevisionStrategy,
+    ) -> Result<ValidationSets, TxnError>;
 }

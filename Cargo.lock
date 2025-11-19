@@ -353,6 +353,7 @@ name = "parallel-exec"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "clap",
  "dashmap",
  "primitive-types",
  "tokio",
