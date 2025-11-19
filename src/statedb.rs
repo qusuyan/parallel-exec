@@ -1,4 +1,4 @@
-use crate::{Key, Value, Version};
+use crate::{Key, Version};
 use dashmap::DashMap;
 
-pub(crate) type StateDB = DashMap<Key, (Value, Version)>;
+pub(crate) type StateDB = DashMap<Key, Version>;

@@ -1,11 +1,13 @@
 mod txn;
+use std::sync::Arc;
+
 pub use txn::{MockTransaction, StateDBOp, Transaction, WriteOp};
 
 mod statedb;
 use statedb::StateDB;
 
 mod vm;
-pub use vm::{SequentialVM, VM};
+pub use vm::{SequentialVM, SequentialValidationVM, VM};
 
 use primitive_types::U256;
 
@@ -33,5 +35,5 @@ pub type Version = u64;
 
 pub struct Block {
     pub id: u64,
-    pub transactions: Vec<Box<dyn Transaction + Send + Sync>>,
+    pub transactions: Vec<Arc<dyn Transaction + Send + Sync>>,
 }

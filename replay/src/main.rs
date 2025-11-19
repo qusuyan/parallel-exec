@@ -1,7 +1,8 @@
-use parallel_exec::{Block, MockTransaction, SequentialVM, StateDBOp, VM};
+use parallel_exec::{Block, MockTransaction, SequentialVM, SequentialValidationVM, StateDBOp, VM};
 
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -12,13 +13,36 @@ use primitive_types::U256;
 
 #[derive(Parser)]
 struct Args {
-    // Define your command line arguments here
+    // IO trace file
     #[clap(short = 'f', long)]
     trace_file: String,
+
+    // Latency file
+    #[clap(short = 'l', long)]
+    lat_file: String,
 
     // Number of worker threads
     #[clap(short = 't', long, default_value = "4")]
     threads: usize,
+
+    // VM type
+    #[clap(short = 'e', long, default_value = "sequential")]
+    vm_type: VMType,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+enum VMType {
+    Sequential,
+    SequentialValidation,
+}
+
+impl VMType {
+    fn new(&self) -> Box<dyn VM> {
+        match self {
+            VMType::Sequential => Box::new(SequentialVM::new()),
+            VMType::SequentialValidation => Box::new(SequentialValidationVM::new()),
+        }
+    }
 }
 
 fn parse_op(op: &str, state_key: &str, aux: &str) -> StateDBOp {
@@ -93,18 +117,24 @@ fn main() {
         .build()
         .unwrap();
 
-    let mut times = HashMap::new();
+    let vm = args.vm_type.new();
+    let mut times = Vec::new();
 
     rt.block_on(async {
-        let file = File::open(args.trace_file).await.unwrap();
-        let reader = BufReader::new(file);
-        let mut lines = reader.lines();
-        lines.next_line().await.unwrap(); // Skip header
+        let op_file = File::open(args.trace_file).await.unwrap();
+        let op_reader = BufReader::new(op_file);
+        let mut op_lines = op_reader.lines();
+        op_lines.next_line().await.unwrap(); // Skip header
+
+        let lat_file = File::open(args.lat_file).await.unwrap();
+        let lat_reader = BufReader::new(lat_file);
+        let mut lat_lines = lat_reader.lines();
+        lat_lines.next_line().await.unwrap(); // Skip header
 
         let mut cur_block = Vec::new();
         let mut cur_txn: Option<(String, String)> = None;
         let mut cur_ops = Vec::new();
-        while let Some(line) = lines.next_line().await.unwrap() {
+        while let Some(line) = op_lines.next_line().await.unwrap() {
             let [blk_id, txn_id, op, state_key, aux] =
                 line.trim().split(',').collect::<Vec<_>>()[..]
             else {
@@ -114,20 +144,31 @@ fn main() {
             match cur_txn.as_mut() {
                 Some((cur_blk_id, cur_txn_id)) => {
                     if cur_blk_id != blk_id || cur_txn_id != txn_id {
+                        let latency_line = lat_lines.next_line().await.unwrap().unwrap();
+                        let [lat_blk_id, lat_txn_id, _gas_limit, _gas_used, latency] =
+                            latency_line.trim().split(',').collect::<Vec<_>>()[..]
+                        else {
+                            panic!("Invalid latency line format");
+                        };
+                        assert_eq!(lat_blk_id, cur_blk_id);
+                        assert_eq!(lat_txn_id, cur_txn_id);
+
                         let new_txn = MockTransaction::new(
                             u64::from_str_radix(&cur_txn_id, 16).unwrap(),
-                            std::time::Duration::from_secs(0), // TODO
+                            std::time::Duration::from_secs_f64(
+                                f64::from_str(latency).unwrap() as f64
+                            ),
                             std::mem::take(&mut cur_ops),
                         );
                         cur_block
-                            .push(Box::new(new_txn)
-                                as Box<dyn parallel_exec::Transaction + Send + Sync>);
+                            .push(Arc::new(new_txn)
+                                as Arc<dyn parallel_exec::Transaction + Send + Sync>);
                     }
 
                     if cur_blk_id != blk_id {
                         // Process the completed block
                         println!(
-                            "Completed block {}: {} transactions",
+                            "Executing block {}: {} transactions",
                             cur_blk_id,
                             cur_block.len()
                         );
@@ -138,11 +179,10 @@ fn main() {
                             transactions: std::mem::take(&mut cur_block),
                         };
 
-                        let vm = SequentialVM::new();
                         let start = std::time::Instant::now();
                         vm.process(new_block).await;
                         let duration = start.elapsed();
-                        times.insert(blk_id_parsed, duration);
+                        times.push((blk_id_parsed, duration));
                     }
 
                     *cur_blk_id = blk_id.to_string();
@@ -160,15 +200,15 @@ fn main() {
         // Process the last transaction and block
         if let Some((cur_blk_id, cur_txn_id)) = cur_txn.as_mut() {
             let new_txn = MockTransaction::new(
-                u64::from_str(cur_txn_id).unwrap(),
+                u64::from_str_radix(cur_txn_id, 16).unwrap(),
                 std::time::Duration::from_secs(0), // TODO
                 std::mem::take(&mut cur_ops),
             );
-            cur_block.push(Box::new(new_txn) as Box<dyn parallel_exec::Transaction + Send + Sync>);
+            cur_block.push(Arc::new(new_txn) as Arc<dyn parallel_exec::Transaction + Send + Sync>);
 
             // Process the completed block
             println!(
-                "Completed block {}: {} transactions",
+                "Executing block {}: {} transactions",
                 cur_blk_id,
                 cur_block.len()
             );
@@ -179,16 +219,15 @@ fn main() {
                 transactions: std::mem::take(&mut cur_block),
             };
 
-            let vm = SequentialVM::new();
             let start = std::time::Instant::now();
             vm.process(new_block).await;
             let duration = start.elapsed();
-            times.insert(blk_id_parsed, duration);
+            times.push((blk_id_parsed, duration));
         }
     });
 
     // Print timing results
-    for (blk_id, duration) in times.iter() {
+    for (blk_id, duration) in times {
         println!("Block {}: {:?}", blk_id, duration);
     }
 }

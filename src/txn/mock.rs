@@ -57,8 +57,8 @@ impl MockTransaction {
                 }
             }
             None => {
-                let val = statedb.get(&key).map(|e| e.1).unwrap_or(0);
-                read_set.insert(key, val);
+                let version = statedb.get(&key).map(|e| *e).unwrap_or(0);
+                read_set.insert(key, version);
             }
         }
     }
@@ -73,21 +73,15 @@ impl MockTransaction {
         match write_set.get_mut(&key) {
             Some(write_op) => match write_op {
                 WriteOp::Set(_) => {}
-                WriteOp::Inc(inc, sign) => {
-                    let (base_val, version) =
-                        statedb.get(&key).map(|e| *e).unwrap_or((U256::zero(), 0));
-                    let new_val = if *sign {
-                        base_val + *inc
-                    } else {
-                        base_val.saturating_sub(*inc) // assume sufficient balance
-                    };
-                    *write_op = WriteOp::Set(new_val);
+                WriteOp::Inc(inc, _) => {
+                    let version = statedb.get(&key).map(|e| *e).unwrap_or(0);
+                    *write_op = WriteOp::Set(*inc);
                     read_set.insert(key.clone(), version);
                 }
             },
             None => {
-                let val = statedb.get(&key).map(|e| e.1).unwrap_or(0);
-                read_set.insert(key, val);
+                let version = statedb.get(&key).map(|e| *e).unwrap_or(0);
+                read_set.insert(key, version);
             }
         }
     }
@@ -182,21 +176,15 @@ impl Transaction for MockTransaction {
                                 if *sign && *inc >= *amount {
                                     // enough balance, no need to read actual balance
                                 } else {
-                                    let (base_val, version) =
-                                        statedb.get(&key).map(|e| *e).unwrap_or((U256::zero(), 0));
-                                    let new_val = if *sign {
-                                        base_val + *inc
-                                    } else {
-                                        base_val.saturating_sub(*inc) // assume sufficient balance
-                                    };
-                                    *write_op = WriteOp::Set(new_val);
+                                    let version = statedb.get(&key).map(|e| *e).unwrap_or(0);
+                                    *write_op = WriteOp::Set(*inc);
                                     read_set.insert(key.clone(), version);
                                 }
                             }
                         },
                         None => {
-                            let val = statedb.get(&key).map(|e| e.1).unwrap_or(0);
-                            read_set.insert(key, val);
+                            let version = statedb.get(&key).map(|e| *e).unwrap_or(0);
+                            read_set.insert(key, version);
                         }
                     }
                 }
@@ -311,13 +299,8 @@ impl Transaction for MockTransaction {
             }
         }
 
-        // mock execution time
-        loop {
-            if Instant::now() >= end {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
+        // mock execution time - do not deschedule the task
+        while Instant::now() < end {}
 
         ExecResult {
             read_set,
