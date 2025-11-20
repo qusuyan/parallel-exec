@@ -1,8 +1,8 @@
 mod basic;
 use basic::BasicRevision;
 
-mod comm_balance_op;
-use comm_balance_op::CommAddBalanceRevision;
+mod lazy_exec;
+use lazy_exec::LazyExecRevision;
 
 mod check_enough_balance;
 use check_enough_balance::CheckEnoughBalanceRevision;
@@ -41,6 +41,7 @@ pub enum StateDBOp {
 #[derive(Debug)]
 pub enum StateDBError {}
 
+#[derive(Debug)]
 pub struct ValidationSets {
     pub read_set: HashMap<Key, Version>,
     pub write_set: HashMap<Key, WriteOp>,
@@ -49,7 +50,7 @@ pub struct ValidationSets {
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum RevisionStrategy {
     Basic,
-    CommAddBalance,
+    LazyExec,
     CheckEnoughBalance,
 }
 
@@ -57,7 +58,7 @@ impl RevisionStrategy {
     pub(crate) fn new<'a>(&self, statedb: &'a StateDB) -> Box<dyn Revision + 'a> {
         match self {
             RevisionStrategy::Basic => Box::new(BasicRevision::new(statedb)),
-            RevisionStrategy::CommAddBalance => Box::new(CommAddBalanceRevision::new(statedb)),
+            RevisionStrategy::LazyExec => Box::new(LazyExecRevision::new(statedb)),
             RevisionStrategy::CheckEnoughBalance => {
                 Box::new(CheckEnoughBalanceRevision::new(statedb))
             }

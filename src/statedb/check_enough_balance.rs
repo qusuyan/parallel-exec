@@ -66,12 +66,10 @@ impl<'a> Revision for CheckEnoughBalanceRevision<'a> {
                         if *inc > amount {
                             // subtracted more balance than adding
                             *inc -= amount;
-                        } else if *inc < amount {
+                        } else {
                             // subtracted less balance than adding
                             *sign = true;
                             *inc = amount - *inc;
-                        } else {
-                            entry.remove();
                         }
                     }
                 }
@@ -94,9 +92,7 @@ impl<'a> Revision for CheckEnoughBalanceRevision<'a> {
         };
         match self.write_set.entry(key) {
             Entry::Occupied(mut entry) => match entry.get_mut() {
-                WriteOp::Set(current_val) => {
-                    *current_val += amount;
-                }
+                WriteOp::Set(current_val) => *current_val = current_val.saturating_sub(amount),
                 WriteOp::Inc(inc, sign) => {
                     if !*sign {
                         // subtracting more balance
@@ -105,12 +101,10 @@ impl<'a> Revision for CheckEnoughBalanceRevision<'a> {
                         if *inc > amount {
                             // added more balance than subtracting
                             *inc -= amount;
-                        } else if *inc < amount {
+                        } else {
                             // added less balance than subtracting
                             *sign = false;
                             *inc = amount - *inc;
-                        } else {
-                            entry.remove();
                         }
                     }
                 }
@@ -134,23 +128,21 @@ impl<'a> Revision for CheckEnoughBalanceRevision<'a> {
         match self.write_set.get_mut(&key) {
             Some(write_op) => match write_op {
                 WriteOp::Set(val) => {
+                    // we know we have enough balance due to recent set
                     return Ok(*val >= amount);
-                } // have enough balance
+                }
                 WriteOp::Inc(inc, sign) => {
                     if *sign && *inc >= amount {
                         // enough balance, no need to read actual balance
                         return Ok(true);
-                    } else {
-                        // for simplicity - since the actual value stored will not matter here
-                        *write_op = WriteOp::Set(amount);
                     }
                 }
             },
             None => {}
         }
 
-        let value = self.read(key)?;
-        return Ok(value >= amount);
+        let _ = self.get_balance(address)?;
+        return Ok(true);
     }
 
     fn into_validation_sets(self: Box<Self>) -> ValidationSets {

@@ -4,7 +4,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::runtime::Builder;
 
 use clap::Parser;
@@ -33,6 +33,10 @@ struct Args {
     /// Revision type
     #[clap(short = 'r', long, default_value = "basic")]
     revision_strategy: RevisionStrategy,
+
+    /// Output file for block execution times
+    #[clap(short = 'o', long, default_value = "out/block_times.csv")]
+    output_file: String,
 }
 
 fn parse_op(op: &str, state_key: &str, aux: &str) -> StateDBOp {
@@ -108,7 +112,6 @@ fn main() {
         .unwrap();
 
     let vm = args.vm_type.new(args.revision_strategy);
-    let mut times = Vec::new();
 
     rt.block_on(async {
         let op_file = File::open(args.trace_file).await.unwrap();
@@ -120,6 +123,13 @@ fn main() {
         let lat_reader = BufReader::new(lat_file);
         let mut lat_lines = lat_reader.lines();
         lat_lines.next_line().await.unwrap(); // Skip header
+
+        let mut out_file = File::create(args.output_file).await.unwrap();
+        let mut out_writer = BufWriter::new(&mut out_file);
+        out_writer
+            .write_all(b"block_id,execution_time\n")
+            .await
+            .unwrap();
 
         let mut cur_block = Vec::new();
         let mut cur_txn: Option<(String, String)> = None;
@@ -146,7 +156,7 @@ fn main() {
                         let new_txn = MockTransaction::new(
                             u64::from_str_radix(&cur_txn_id, 16).unwrap(),
                             std::time::Duration::from_secs_f64(
-                                f64::from_str(latency).unwrap() as f64
+                                f64::from_str(latency).unwrap() / 1000.0,
                             ),
                             std::mem::take(&mut cur_ops),
                         );
@@ -172,7 +182,13 @@ fn main() {
                         let start = std::time::Instant::now();
                         vm.process(new_block).await.unwrap();
                         let duration = start.elapsed();
-                        times.push((blk_id_parsed, duration));
+                        out_writer
+                            .write_all(
+                                format!("{},{}\n", blk_id_parsed, duration.as_secs_f64())
+                                    .as_bytes(),
+                            )
+                            .await
+                            .unwrap();
                     }
 
                     *cur_blk_id = blk_id.to_string();
@@ -214,12 +230,12 @@ fn main() {
             let start = std::time::Instant::now();
             vm.process(new_block).await.unwrap();
             let duration = start.elapsed();
-            times.push((blk_id_parsed, duration));
+            out_writer
+                .write_all(format!("{},{}\n", blk_id_parsed, duration.as_secs_f64()).as_bytes())
+                .await
+                .unwrap();
         }
-    });
 
-    // Print timing results
-    for (blk_id, duration) in times {
-        println!("Block {}: {:?}", blk_id, duration);
-    }
+        out_writer.flush().await.unwrap();
+    });
 }

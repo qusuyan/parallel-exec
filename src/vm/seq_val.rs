@@ -1,6 +1,6 @@
 use super::{VM, VMError};
-use crate::Block;
 use crate::statedb::{RevisionStrategy, StateDB};
+use crate::{Block, WriteOp};
 
 use std::sync::Arc;
 
@@ -64,7 +64,12 @@ impl VM for SequentialValidationVM {
             }
 
             // commit write set
-            for (key, _) in exec_result.write_set {
+            for (key, op) in exec_result.write_set {
+                if let WriteOp::Inc(val, _) = op {
+                    if val.is_zero() {
+                        continue;
+                    }
+                }
                 self.statedb.insert(key, i as u64);
             }
         }
