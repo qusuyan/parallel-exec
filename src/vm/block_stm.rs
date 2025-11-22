@@ -1,9 +1,51 @@
 use super::{VM, VMError};
-use crate::Block;
 use crate::storage::MVStorage;
+use crate::{Block, TxnID};
 
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64};
+
+use dashmap::DashSet;
 use tokio::runtime::Handle;
-use tokio::task::JoinHandle;
+
+#[derive(Debug)]
+enum TxnStatus {
+    Ready,
+    Executing,
+    Executed,
+    Aborting,
+}
+
+#[derive(Debug)]
+struct Scheduler {
+    execution_id: AtomicU64,
+    validation_id: AtomicU64,
+    decrease_count: AtomicU64,
+    num_active_tasks: AtomicU64,
+    done_marker: AtomicBool,
+    txn_dependency: Box<[DashSet<TxnID>]>,
+    txn_status: Box<[Mutex<(u32, TxnStatus)>]>,
+}
+
+impl Scheduler {
+    fn new(num_txns: usize) -> Scheduler {
+        Scheduler {
+            execution_id: AtomicU64::new(0),
+            validation_id: AtomicU64::new(0),
+            decrease_count: AtomicU64::new(0),
+            num_active_tasks: AtomicU64::new(0),
+            done_marker: AtomicBool::new(false),
+            txn_dependency: (0..num_txns)
+                .map(|_| DashSet::new())
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            txn_status: (0..num_txns)
+                .map(|_| Mutex::new((0, TxnStatus::Ready)))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        }
+    }
+}
 
 pub struct BlockSTMVM {
     storage: MVStorage,
