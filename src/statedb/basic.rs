@@ -3,19 +3,19 @@
  */
 use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
 use crate::storage::Storage;
-use crate::{Key, WriteOp};
+use crate::{Key, TxnID, WriteOp};
 
 use std::collections::HashMap;
 
 pub(crate) struct BasicStateDB<'a> {
-    id: Version,
+    id: TxnID,
     storage: &'a dyn Storage,
     read_set: HashMap<Key, Version>,
     write_set: HashMap<Key, WriteOp>,
 }
 
 impl<'a> BasicStateDB<'a> {
-    pub fn new(id: Version, storage: &'a dyn Storage) -> Self {
+    pub fn new(id: TxnID, storage: &'a dyn Storage) -> Self {
         Self {
             id,
             storage,

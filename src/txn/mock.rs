@@ -7,25 +7,25 @@ use async_trait::async_trait;
 use tokio::time::{Duration, Instant};
 
 use super::{Transaction, TxnError};
-use crate::Version;
+use crate::TxnID;
 use crate::statedb::{StateDBOp, StateDBType, ValidationSets};
 use crate::storage::Storage;
 
 pub struct MockTransaction {
-    id: Version,
+    id: TxnID,
     exec_time: Duration,
     ops: Vec<StateDBOp>,
 }
 
 impl MockTransaction {
-    pub fn new(id: Version, exec_time: Duration, ops: Vec<StateDBOp>) -> Self {
+    pub fn new(id: TxnID, exec_time: Duration, ops: Vec<StateDBOp>) -> Self {
         Self { id, exec_time, ops }
     }
 }
 
 #[async_trait]
 impl Transaction for MockTransaction {
-    fn id(&self) -> Version {
+    fn id(&self) -> TxnID {
         self.id
     }
 

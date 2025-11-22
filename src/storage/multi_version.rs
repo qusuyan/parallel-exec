@@ -1,5 +1,5 @@
 use super::Storage;
-use crate::{Key, Version, WriteOp};
+use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::HashMap;
 
@@ -12,17 +12,19 @@ impl MVStorage {
 }
 
 impl Storage for MVStorage {
-    fn get(&self, version: Version, key: &Key) -> Version {
+    fn get(&self, tid: TxnID, key: &Key) -> Version {
         // Placeholder implementation
-        0
+        todo!()
     }
 
-    fn validate(&self, version: Version, read_set: &HashMap<Key, Version>) -> bool {
+    fn validate(&self, tid: TxnID, read_set: &HashMap<Key, Version>) -> bool {
         // Placeholder implementation
-        true
+        todo!()
     }
 
-    fn commit(&self, version: Version, write_set: HashMap<Key, WriteOp>) {
-        // Placeholder implementation
+    fn commit(&self, _tid: TxnID, _write_set: HashMap<Key, WriteOp>) {
+        unreachable!(
+            "MVStorage should call commit - it will speculatively publish write set and revert if validation fails"
+        );
     }
 }

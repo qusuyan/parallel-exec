@@ -76,6 +76,7 @@ impl Ord for Key {
 // Txn ID, or 0 if it is the committed state
 pub type Version = usize;
 
+pub type TxnID = usize;
 pub struct Block {
     pub id: u64,
     pub transactions: Vec<Arc<dyn Transaction + Send + Sync>>,

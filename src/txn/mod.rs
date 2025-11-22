@@ -7,7 +7,7 @@ pub use mock::MockTransaction;
 
 use crate::statedb::{StateDBError, StateDBType, ValidationSets};
 use crate::storage::Storage;
-use crate::{Value, Version};
+use crate::{TxnID, Value};
 
 use async_trait::async_trait;
 
@@ -30,7 +30,7 @@ impl From<StateDBError> for TxnError {
 
 #[async_trait]
 pub trait Transaction {
-    fn id(&self) -> Version;
+    fn id(&self) -> TxnID;
     async fn execute(
         &self,
         statedb: &dyn Storage,

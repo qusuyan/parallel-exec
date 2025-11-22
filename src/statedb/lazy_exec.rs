@@ -5,20 +5,20 @@
  */
 use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
 use crate::storage::Storage;
-use crate::{AccountAddress, Field, Key, WriteOp};
+use crate::{AccountAddress, Field, Key, TxnID, WriteOp};
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 pub(crate) struct LazyExecStateDB<'a> {
-    id: Version,
+    id: TxnID,
     storage: &'a dyn Storage,
     read_set: HashMap<Key, Version>,
     write_set: HashMap<Key, WriteOp>,
 }
 
 impl<'a> LazyExecStateDB<'a> {
-    pub fn new(id: Version, storage: &'a dyn Storage) -> Self {
+    pub fn new(id: TxnID, storage: &'a dyn Storage) -> Self {
         Self {
             id,
             storage,
