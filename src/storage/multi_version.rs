@@ -1,4 +1,4 @@
-use super::Storage;
+use super::{Storage, StorageError};
 use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::HashMap;
@@ -12,7 +12,7 @@ impl MVStorage {
 }
 
 impl Storage for MVStorage {
-    fn get(&self, tid: TxnID, key: &Key) -> Version {
+    fn get(&self, tid: TxnID, key: &Key) -> Result<Version, StorageError> {
         // Placeholder implementation
         todo!()
     }

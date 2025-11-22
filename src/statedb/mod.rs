@@ -14,7 +14,7 @@ use check_enough_balance::CheckEnoughBalanceStateDB;
 
 use std::result::Result;
 
-use crate::storage::Storage;
+use crate::storage::{Storage, StorageError};
 use crate::{AccountAddress, Field, Key, StateKey, TxnID, Value, Version, WriteOp};
 
 use primitive_types::U256;
@@ -42,7 +42,15 @@ pub enum StateDBOp {
 }
 
 #[derive(Debug)]
-pub enum StateDBError {}
+pub enum StateDBError {
+    StorageError(StorageError),
+}
+
+impl From<StorageError> for StateDBError {
+    fn from(err: StorageError) -> Self {
+        StateDBError::StorageError(err)
+    }
+}
 
 #[derive(Debug)]
 pub struct ValidationSets {

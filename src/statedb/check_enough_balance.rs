@@ -51,7 +51,7 @@ impl<'a> StateDBBase for CheckEnoughBalanceStateDB<'a> {
         }
 
         // read from statedb
-        let version = self.storage.get(self.id, &key);
+        let version = self.storage.get(self.id, &key)?;
         self.read_set.insert(key, version);
         Ok(Value::one())
     }

@@ -1,7 +1,7 @@
 /**
  * A simple storage implementation based on DashMap.
  */
-use super::Storage;
+use super::{Storage, StorageError};
 use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::HashMap;
@@ -21,8 +21,8 @@ impl SimpleStorage {
 }
 
 impl Storage for SimpleStorage {
-    fn get(&self, _: TxnID, key: &Key) -> Version {
-        self.store.get(key).map(|e| *e).unwrap_or(0)
+    fn get(&self, _: TxnID, key: &Key) -> Result<Version, StorageError> {
+        Ok(self.store.get(key).map(|e| *e).unwrap_or(0))
     }
 
     fn validate(&self, _: TxnID, read_set: &HashMap<Key, Version>) -> bool {

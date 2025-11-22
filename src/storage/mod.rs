@@ -12,8 +12,11 @@ use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::HashMap;
 
+#[derive(Debug)]
+pub enum StorageError {}
+
 pub trait Storage: Sync + Send {
-    fn get(&self, tid: TxnID, key: &Key) -> Version;
+    fn get(&self, tid: TxnID, key: &Key) -> Result<Version, StorageError>;
     fn validate(&self, tid: TxnID, read_set: &HashMap<Key, Version>) -> bool;
     fn commit(&self, tid: TxnID, write_set: HashMap<Key, WriteOp>);
 }
