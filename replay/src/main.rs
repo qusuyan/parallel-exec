@@ -111,8 +111,6 @@ fn main() {
         .build()
         .unwrap();
 
-    let vm = args.vm_type.new(args.revision_strategy);
-
     rt.block_on(async {
         let op_file = File::open(args.trace_file).await.unwrap();
         let op_reader = BufReader::new(op_file);
@@ -179,6 +177,7 @@ fn main() {
                             transactions: std::mem::take(&mut cur_block),
                         };
 
+                        let vm = args.vm_type.new(args.revision_strategy);
                         let start = std::time::Instant::now();
                         vm.process(new_block).await.unwrap();
                         let duration = start.elapsed();
@@ -227,6 +226,7 @@ fn main() {
                 transactions: std::mem::take(&mut cur_block),
             };
 
+            let vm = args.vm_type.new(args.revision_strategy);
             let start = std::time::Instant::now();
             vm.process(new_block).await.unwrap();
             let duration = start.elapsed();

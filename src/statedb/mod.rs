@@ -47,7 +47,7 @@ pub struct ValidationSets {
     pub write_set: HashMap<Key, WriteOp>,
 }
 
-#[derive(clap::ValueEnum, Clone, Debug)]
+#[derive(clap::ValueEnum, Clone, Debug, Copy)]
 pub enum RevisionStrategy {
     Basic,
     LazyExec,

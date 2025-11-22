@@ -2,16 +2,15 @@
 members = ["replay"]
 
 [package]
+edition = "2024"
 name = "parallel-exec"
 version = "0.1.0"
-edition = "2024"
 
 [lib]
 
-
 [dependencies]
-primitive-types = "0.14.0"
 async-trait = "0.1.89"
-tokio = {version = "1", features = ["time"]}
-dashmap = "6.1.0"
 clap = {version = "4", default-features = false, features = ["help", "suggestions", "color", "std", "cargo", "derive"]}
+dashmap = "6.1.0"
+primitive-types = "0.14.0"
+tokio = {version = "1", features = ["time"]}
