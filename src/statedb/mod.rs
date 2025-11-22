@@ -1,21 +1,24 @@
+/**
+ * StateDB wraps Storage to provide higher level state operations.
+ * It additionally maintains the read and write set so each transaction should
+ * have its own StateDB instance.
+ */
 mod basic;
-use basic::BasicRevision;
+use basic::BasicStateDB;
 
 mod lazy_exec;
-use lazy_exec::LazyExecRevision;
+use lazy_exec::LazyExecStateDB;
 
 mod check_enough_balance;
-use check_enough_balance::CheckEnoughBalanceRevision;
+use check_enough_balance::CheckEnoughBalanceStateDB;
 
 use std::result::Result;
 
+use crate::storage::Storage;
 use crate::{AccountAddress, Field, Key, StateKey, Value, Version, WriteOp};
 
-use dashmap::DashMap;
 use primitive_types::U256;
 use std::collections::HashMap;
-
-pub(crate) type StateDB = DashMap<Key, Version>;
 
 #[derive(Debug)]
 pub enum StateDBOp {
@@ -48,30 +51,30 @@ pub struct ValidationSets {
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, Copy)]
-pub enum RevisionStrategy {
+pub enum StateDBType {
     Basic,
     LazyExec,
     CheckEnoughBalance,
 }
 
-impl RevisionStrategy {
-    pub(crate) fn new<'a>(&self, statedb: &'a StateDB) -> Box<dyn Revision + 'a> {
+impl StateDBType {
+    pub(crate) fn new<'a>(&self, id: Version, storage: &'a dyn Storage) -> Box<dyn StateDB + 'a> {
         match self {
-            RevisionStrategy::Basic => Box::new(BasicRevision::new(statedb)),
-            RevisionStrategy::LazyExec => Box::new(LazyExecRevision::new(statedb)),
-            RevisionStrategy::CheckEnoughBalance => {
-                Box::new(CheckEnoughBalanceRevision::new(statedb))
+            StateDBType::Basic => Box::new(BasicStateDB::new(id, storage)),
+            StateDBType::LazyExec => Box::new(LazyExecStateDB::new(id, storage)),
+            StateDBType::CheckEnoughBalance => {
+                Box::new(CheckEnoughBalanceStateDB::new(id, storage))
             }
         }
     }
 }
 
-pub(crate) trait RevisionBase {
+pub(crate) trait StateDBBase {
     fn write(&mut self, key: Key, write_op: WriteOp) -> Result<(), StateDBError>;
     fn read(&mut self, key: Key) -> Result<Value, StateDBError>;
 }
 
-pub(crate) trait Revision: RevisionBase {
+pub(crate) trait StateDB: StateDBBase {
     fn exist(&mut self, address: AccountAddress) -> Result<bool, StateDBError> {
         let key = Key {
             address,

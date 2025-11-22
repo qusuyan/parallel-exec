@@ -1,26 +1,34 @@
-use super::{Revision, RevisionBase, StateDB, StateDBError, ValidationSets, Value, Version};
+/**
+ * LazyExecution lazily executes write operations since their effects do not have external impact.
+ * This allows us to treat AddBalance and SubBalance as writes instead of read-modify-write,
+ * reducing conflicts and improving parallelism.
+ */
+use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
+use crate::storage::Storage;
 use crate::{AccountAddress, Field, Key, WriteOp};
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-pub(crate) struct LazyExecRevision<'a> {
-    statedb: &'a StateDB,
+pub(crate) struct LazyExecStateDB<'a> {
+    id: Version,
+    storage: &'a dyn Storage,
     read_set: HashMap<Key, Version>,
     write_set: HashMap<Key, WriteOp>,
 }
 
-impl<'a> LazyExecRevision<'a> {
-    pub fn new(statedb: &'a StateDB) -> Self {
+impl<'a> LazyExecStateDB<'a> {
+    pub fn new(id: Version, storage: &'a dyn Storage) -> Self {
         Self {
-            statedb,
+            id,
+            storage,
             read_set: HashMap::new(),
             write_set: HashMap::new(),
         }
     }
 }
 
-impl<'a> RevisionBase for LazyExecRevision<'a> {
+impl<'a> StateDBBase for LazyExecStateDB<'a> {
     fn write(&mut self, key: Key, write_op: WriteOp) -> Result<(), StateDBError> {
         self.write_set.insert(key, write_op);
         Ok(())
@@ -41,13 +49,13 @@ impl<'a> RevisionBase for LazyExecRevision<'a> {
         }
 
         // read from statedb
-        let version = self.statedb.get(&key).map(|e| *e).unwrap_or(0);
+        let version = self.storage.get(self.id, &key);
         self.read_set.insert(key, version);
         Ok(Value::one())
     }
 }
 
-impl<'a> Revision for LazyExecRevision<'a> {
+impl<'a> StateDB for LazyExecStateDB<'a> {
     fn add_balance(&mut self, address: AccountAddress, amount: Value) -> Result<(), StateDBError> {
         let key = Key {
             address,

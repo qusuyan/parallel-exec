@@ -4,7 +4,9 @@ use std::sync::Arc;
 pub use txn::{MockTransaction, Transaction, WriteOp};
 
 mod statedb;
-pub use statedb::{RevisionStrategy, StateDBOp};
+pub use statedb::{StateDBOp, StateDBType};
+
+mod storage;
 
 mod vm;
 pub use vm::{SequentialVM, SequentialValidationVM, VM, VMType};
@@ -72,7 +74,7 @@ impl Ord for Key {
 }
 
 // Txn ID, or 0 if it is the committed state
-pub type Version = u64;
+pub type Version = usize;
 
 pub struct Block {
     pub id: u64,

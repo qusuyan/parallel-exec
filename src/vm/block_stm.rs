@@ -1,6 +1,6 @@
 use super::{VM, VMError};
 use crate::Block;
-use crate::statedb::StateDB;
+use crate::storage::MVStorage;
 
 use tokio::task::JoinHandle;
 
@@ -9,7 +9,7 @@ pub struct BlockSTMVMConfig {
 }
 
 pub struct BlockSTMVM {
-    statedb: StateDB,
+    storage: MVStorage,
     handlers: Vec<JoinHandle<()>>,
 }
 
@@ -20,7 +20,7 @@ impl BlockSTMVM {
             .collect();
 
         Self {
-            statedb: StateDB::new(),
+            storage: MVStorage::new(),
             handlers,
         }
     }

@@ -1,3 +1,6 @@
+/**
+ * Virtual Machine (VM) module. It specifies how the VM processes a block of transactions.
+ */
 mod sequential;
 pub use sequential::SequentialVM;
 
@@ -7,7 +10,7 @@ mod seq_val;
 pub use seq_val::SequentialValidationVM;
 
 use crate::Block;
-use crate::statedb::RevisionStrategy;
+use crate::statedb::StateDBType;
 use crate::txn::TxnError;
 
 use async_trait::async_trait;
@@ -19,7 +22,7 @@ pub enum VMType {
 }
 
 impl VMType {
-    pub fn new(&self, revision_strategy: RevisionStrategy) -> Box<dyn VM> {
+    pub fn new(&self, revision_strategy: StateDBType) -> Box<dyn VM> {
         match self {
             VMType::Sequential => Box::new(SequentialVM::new(revision_strategy)),
             VMType::SequentialValidation => {

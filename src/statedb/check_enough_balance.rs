@@ -1,26 +1,36 @@
-use super::{Revision, RevisionBase, StateDB, StateDBError, ValidationSets, Value, Version};
+/**
+ * CheckEnoughBalanceStateDB introduces the new operation `check_enough_balance`. The foundamental
+ * observation is that in most cases GetBalance is used to check if an account has enough balance.
+ * If there is an AddBalance on the same account for a value greater than or equal to the checked
+ * amount, we can safely skip reading the actual balance from storage. This optimization can
+ * reduce read-write conflicts and improve parallelism in several cases.
+ */
+use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
+use crate::storage::Storage;
 use crate::{AccountAddress, Field, Key, WriteOp};
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-pub(crate) struct CheckEnoughBalanceRevision<'a> {
-    statedb: &'a StateDB,
+pub(crate) struct CheckEnoughBalanceStateDB<'a> {
+    id: Version,
+    storage: &'a dyn Storage,
     read_set: HashMap<Key, Version>,
     write_set: HashMap<Key, WriteOp>,
 }
 
-impl<'a> CheckEnoughBalanceRevision<'a> {
-    pub fn new(statedb: &'a StateDB) -> Self {
+impl<'a> CheckEnoughBalanceStateDB<'a> {
+    pub fn new(id: Version, storage: &'a dyn Storage) -> Self {
         Self {
-            statedb,
+            id,
+            storage,
             read_set: HashMap::new(),
             write_set: HashMap::new(),
         }
     }
 }
 
-impl<'a> RevisionBase for CheckEnoughBalanceRevision<'a> {
+impl<'a> StateDBBase for CheckEnoughBalanceStateDB<'a> {
     fn write(&mut self, key: Key, write_op: WriteOp) -> Result<(), StateDBError> {
         self.write_set.insert(key, write_op);
         Ok(())
@@ -41,13 +51,13 @@ impl<'a> RevisionBase for CheckEnoughBalanceRevision<'a> {
         }
 
         // read from statedb
-        let version = self.statedb.get(&key).map(|e| *e).unwrap_or(0);
+        let version = self.storage.get(self.id, &key);
         self.read_set.insert(key, version);
         Ok(Value::one())
     }
 }
 
-impl<'a> Revision for CheckEnoughBalanceRevision<'a> {
+impl<'a> StateDB for CheckEnoughBalanceStateDB<'a> {
     fn add_balance(&mut self, address: AccountAddress, amount: Value) -> Result<(), StateDBError> {
         let key = Key {
             address,

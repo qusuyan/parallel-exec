@@ -1,8 +1,13 @@
+/**
+ * Transaction abstraction. It takes the current storage state, creates a StateDB instance,
+ * and run the transaction logic.
+ */
 mod mock;
 pub use mock::MockTransaction;
 
-use crate::Value;
-use crate::statedb::{RevisionStrategy, StateDB, StateDBError, ValidationSets};
+use crate::statedb::{StateDBError, StateDBType, ValidationSets};
+use crate::storage::Storage;
+use crate::{Value, Version};
 
 use async_trait::async_trait;
 
@@ -25,10 +30,10 @@ impl From<StateDBError> for TxnError {
 
 #[async_trait]
 pub trait Transaction {
-    fn id(&self) -> u64;
+    fn id(&self) -> Version;
     async fn execute(
         &self,
-        statedb: &StateDB,
-        revision_strategy: RevisionStrategy,
+        statedb: &dyn Storage,
+        revision_strategy: StateDBType,
     ) -> Result<ValidationSets, TxnError>;
 }

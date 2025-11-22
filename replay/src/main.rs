@@ -1,4 +1,4 @@
-use parallel_exec::{Block, MockTransaction, RevisionStrategy, StateDBOp, VMType};
+use parallel_exec::{Block, MockTransaction, StateDBOp, StateDBType, VMType};
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ struct Args {
 
     /// Revision type
     #[clap(short = 'r', long, default_value = "basic")]
-    revision_strategy: RevisionStrategy,
+    revision_strategy: StateDBType,
 
     /// Output file for block execution times
     #[clap(short = 'o', long, default_value = "out/block_times.csv")]
@@ -152,7 +152,7 @@ fn main() {
                         assert_eq!(lat_txn_id, cur_txn_id);
 
                         let new_txn = MockTransaction::new(
-                            u64::from_str_radix(&cur_txn_id, 16).unwrap(),
+                            usize::from_str_radix(&cur_txn_id, 16).unwrap(),
                             std::time::Duration::from_secs_f64(
                                 f64::from_str(latency).unwrap() / 1000.0,
                             ),
@@ -207,7 +207,7 @@ fn main() {
         // Process the last transaction and block
         if let Some((cur_blk_id, cur_txn_id)) = cur_txn.as_mut() {
             let new_txn = MockTransaction::new(
-                u64::from_str_radix(cur_txn_id, 16).unwrap(),
+                usize::from_str_radix(cur_txn_id, 16).unwrap(),
                 std::time::Duration::from_secs(0), // TODO
                 std::mem::take(&mut cur_ops),
             );

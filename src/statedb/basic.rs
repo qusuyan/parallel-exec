@@ -1,25 +1,31 @@
-use super::{Revision, RevisionBase, StateDB, StateDBError, ValidationSets, Value, Version};
+/**
+ * Basic StateDB implementation. It treats all operations as intended without any optimization.
+ */
+use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
+use crate::storage::Storage;
 use crate::{Key, WriteOp};
 
 use std::collections::HashMap;
 
-pub(crate) struct BasicRevision<'a> {
-    statedb: &'a StateDB,
+pub(crate) struct BasicStateDB<'a> {
+    id: Version,
+    storage: &'a dyn Storage,
     read_set: HashMap<Key, Version>,
     write_set: HashMap<Key, WriteOp>,
 }
 
-impl<'a> BasicRevision<'a> {
-    pub fn new(statedb: &'a StateDB) -> Self {
+impl<'a> BasicStateDB<'a> {
+    pub fn new(id: Version, storage: &'a dyn Storage) -> Self {
         Self {
-            statedb,
+            id,
+            storage,
             read_set: HashMap::new(),
             write_set: HashMap::new(),
         }
     }
 }
 
-impl<'a> RevisionBase for BasicRevision<'a> {
+impl<'a> StateDBBase for BasicStateDB<'a> {
     fn write(&mut self, key: Key, write_op: WriteOp) -> Result<(), StateDBError> {
         self.write_set.insert(key, write_op);
         Ok(())
@@ -40,13 +46,13 @@ impl<'a> RevisionBase for BasicRevision<'a> {
         }
 
         // read from statedb
-        let version = self.statedb.get(&key).map(|e| *e).unwrap_or(0);
+        let version = self.storage.get(self.id, &key);
         self.read_set.insert(key, version);
         Ok(Value::one())
     }
 }
 
-impl<'a> Revision for BasicRevision<'a> {
+impl<'a> StateDB for BasicStateDB<'a> {
     fn into_validation_sets(self: Box<Self>) -> ValidationSets {
         ValidationSets {
             read_set: self.read_set,
