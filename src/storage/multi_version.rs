@@ -65,8 +65,10 @@ impl MVStorage {
 
     // called when finish execution - so that write set is immediately visible
     pub(crate) fn record(&self, tid: TxnID, nonce: u32, write_set: HashMap<Key, WriteOp>) -> bool {
+        // write new values
         self.apply_write_set(tid, nonce, &write_set);
         let wrote_keys = write_set.keys().cloned().collect();
+        // clear out old writes and return if any key is not written in the last time
         self.rcu_update_written_locations(tid, wrote_keys)
     }
 
