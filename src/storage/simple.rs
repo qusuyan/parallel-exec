@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use dashmap::DashMap;
 
 pub(crate) struct SimpleStorage {
-    store: DashMap<Key, Version>,
+    store: DashMap<Key, TxnID>,
 }
 
 impl SimpleStorage {
@@ -22,12 +22,12 @@ impl SimpleStorage {
 
 impl Storage for SimpleStorage {
     fn get(&self, _: TxnID, key: &Key) -> Result<Version, StorageError> {
-        Ok(self.store.get(key).map(|e| *e).unwrap_or(0))
+        Ok(self.store.get(key).map(|e| *e))
     }
 
-    fn validate(&self, _: TxnID, read_set: &HashMap<Key, Version>) -> bool {
+    fn validate(&self, tid: TxnID, read_set: &HashMap<Key, Version>) -> bool {
         for (key, ver) in read_set {
-            let current_ver = self.store.get(key).map(|e| *e).unwrap_or(0);
+            let current_ver = self.get(tid, key).unwrap();
             if current_ver != *ver {
                 return false;
             }

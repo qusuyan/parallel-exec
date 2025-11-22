@@ -33,6 +33,7 @@ impl VM for SequentialVM {
                     }
                 })?;
             self.storage.commit(i, result.write_set);
+            log::debug!("Committed txn {}", i);
         }
         Ok(())
     }

@@ -69,9 +69,10 @@ impl VM for SequentialValidationVM {
                 .filter(|(_, write_op)| !matches!(write_op, WriteOp::Inc(val, _) if val.is_zero()))
                 .collect();
             self.storage.commit(i, write_set);
+            log::debug!("Committed txn {}", i);
         }
 
-        println!("Re-executed {} transactions", reexec_count);
+        log::info!("Re-executed {} transactions", reexec_count);
 
         Ok(())
     }

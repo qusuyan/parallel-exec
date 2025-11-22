@@ -73,8 +73,8 @@ impl Ord for Key {
     }
 }
 
-// Txn ID, or 0 if it is the committed state
-pub type Version = usize;
+// Version number, or None if it is the committed state
+pub type Version = Option<usize>;
 
 pub type TxnID = usize;
 pub struct Block {

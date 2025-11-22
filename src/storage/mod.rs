@@ -1,6 +1,6 @@
 /**
  * Versioned storage module for the entire block execution.
- * When a txn finishes execution, its write set is committed to Storage.
+ * Since the exact value does not matter from concurrency control perspective, we only store version numbers.
  */
 mod simple;
 pub(crate) use simple::SimpleStorage;
@@ -13,7 +13,9 @@ use crate::{Key, TxnID, Version, WriteOp};
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub enum StorageError {}
+pub enum StorageError {
+    ReadToBeModified,
+}
 
 pub trait Storage: Sync + Send {
     fn get(&self, tid: TxnID, key: &Key) -> Result<Version, StorageError>;
