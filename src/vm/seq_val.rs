@@ -5,20 +5,20 @@
  */
 use super::{VM, VMError};
 use crate::statedb::StateDBType;
-use crate::storage::{SimpleStorage, Storage};
+use crate::storage::SimpleStorage;
 use crate::{Block, WriteOp};
 
 use std::sync::Arc;
 
 pub struct SequentialValidationVM {
-    revision_strategy: StateDBType,
+    statedb_type: StateDBType,
     storage: Arc<SimpleStorage>,
 }
 
 impl SequentialValidationVM {
-    pub fn new(revision_strategy: StateDBType) -> Self {
+    pub fn new(statedb_type: StateDBType) -> Self {
         Self {
-            revision_strategy,
+            statedb_type,
             storage: Arc::new(SimpleStorage::new()),
         }
     }
@@ -30,14 +30,13 @@ impl VM for SequentialValidationVM {
         let mut reexec_count = 0;
         let mut resps = Vec::new();
         for txn in block.transactions.iter() {
-            let statedb_ref = self.storage.clone();
+            let storage_ref = self.storage.clone();
             let txn_ref = txn.clone();
-            let revision_strategy = self.revision_strategy.clone();
-            let handle = tokio::spawn(async move {
-                txn_ref
-                    .execute(statedb_ref.as_ref(), revision_strategy)
-                    .await
-            });
+            let statedb_type = self.statedb_type.clone();
+            let handle =
+                tokio::spawn(
+                    async move { txn_ref.execute(storage_ref.as_ref(), statedb_type).await },
+                );
             resps.push(handle);
         }
 
@@ -54,7 +53,7 @@ impl VM for SequentialValidationVM {
                 reexec_count += 1;
                 // since all previous transactions are validated and committed, we don't need to check read set again
                 block.transactions[i]
-                    .execute(self.storage.as_ref(), self.revision_strategy.clone())
+                    .execute(self.storage.as_ref(), self.statedb_type.clone())
                     .await
                     .map_err(|error| VMError::TxnError {
                         txn_id: i as u64,

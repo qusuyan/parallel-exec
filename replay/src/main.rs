@@ -31,9 +31,9 @@ struct Args {
     #[clap(short = 'e', long, default_value = "sequential")]
     vm_type: VMType,
 
-    /// Revision type
-    #[clap(short = 'r', long, default_value = "basic")]
-    revision_strategy: StateDBType,
+    /// StateDB type
+    #[clap(short = 's', long, default_value = "basic")]
+    statedb_type: StateDBType,
 
     /// Output file for block execution times
     #[clap(short = 'o', long, default_value = "out/block_times.csv")]
@@ -205,7 +205,7 @@ fn main() {
                             transactions: std::mem::take(&mut cur_block),
                         };
 
-                        let vm = args.vm_type.new(args.revision_strategy);
+                        let vm = args.vm_type.new(args.statedb_type);
                         let start = std::time::Instant::now();
                         vm.process(new_block).await.unwrap();
                         let duration = start.elapsed();
@@ -254,7 +254,7 @@ fn main() {
                 transactions: std::mem::take(&mut cur_block),
             };
 
-            let vm = args.vm_type.new(args.revision_strategy);
+            let vm = args.vm_type.new(args.statedb_type);
             let start = std::time::Instant::now();
             vm.process(new_block).await.unwrap();
             let duration = start.elapsed();

@@ -14,20 +14,21 @@ use crate::statedb::StateDBType;
 use crate::txn::TxnError;
 
 use async_trait::async_trait;
+use tokio::task::JoinError;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum VMType {
     Sequential,
     SequentialValidation,
+    BlockSTM,
 }
 
 impl VMType {
-    pub fn new(&self, revision_strategy: StateDBType) -> Box<dyn VM> {
+    pub fn new(&self, statedb_type: StateDBType) -> Box<dyn VM> {
         match self {
-            VMType::Sequential => Box::new(SequentialVM::new(revision_strategy)),
-            VMType::SequentialValidation => {
-                Box::new(SequentialValidationVM::new(revision_strategy))
-            }
+            VMType::Sequential => Box::new(SequentialVM::new(statedb_type)),
+            VMType::SequentialValidation => Box::new(SequentialValidationVM::new(statedb_type)),
+            VMType::BlockSTM => Box::new(block_stm::BlockSTMVM::new(statedb_type)),
         }
     }
 }
@@ -35,6 +36,13 @@ impl VMType {
 #[derive(Debug)]
 pub enum VMError {
     TxnError { txn_id: u64, error: TxnError },
+    TokioRuntimeError(JoinError),
+}
+
+impl From<JoinError> for VMError {
+    fn from(err: JoinError) -> Self {
+        VMError::TokioRuntimeError(err)
+    }
 }
 
 #[async_trait]

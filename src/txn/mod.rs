@@ -34,6 +34,6 @@ pub trait Transaction {
     async fn execute(
         &self,
         statedb: &dyn Storage,
-        revision_strategy: StateDBType,
+        statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError>;
 }

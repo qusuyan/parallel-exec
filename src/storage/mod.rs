@@ -8,17 +8,13 @@ pub(crate) use simple::SimpleStorage;
 mod multi_version;
 pub(crate) use multi_version::MVStorage;
 
-use crate::{Key, TxnID, Version, WriteOp};
-
-use std::collections::HashMap;
+use crate::{Key, TxnID, Version};
 
 #[derive(Debug)]
 pub enum StorageError {
-    ReadToBeModified,
+    ReadToBeModified(TxnID),
 }
 
 pub trait Storage: Sync + Send {
     fn get(&self, tid: TxnID, key: &Key) -> Result<Version, StorageError>;
-    fn validate(&self, tid: TxnID, read_set: &HashMap<Key, Version>) -> bool;
-    fn commit(&self, tid: TxnID, write_set: HashMap<Key, WriteOp>);
 }
