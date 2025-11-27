@@ -2,6 +2,8 @@
  * Virtual Machine (VM) module. It specifies how the VM processes a block of transactions.
  */
 mod sequential;
+use std::collections::HashMap;
+
 pub use sequential::SequentialVM;
 
 mod block_stm;
@@ -9,9 +11,10 @@ mod block_stm;
 mod seq_val;
 pub use seq_val::SequentialValidationVM;
 
-use crate::Block;
 use crate::statedb::StateDBType;
+use crate::storage::StorageError;
 use crate::txn::TxnError;
+use crate::{Block, Key, VersionRaw};
 
 use async_trait::async_trait;
 use tokio::task::JoinError;
@@ -36,7 +39,9 @@ impl VMType {
 #[derive(Debug)]
 pub enum VMError {
     TxnError { txn_id: u64, error: TxnError },
+    StorageError(StorageError),
     TokioRuntimeError(JoinError),
+    CommitWhileProcessing,
 }
 
 impl From<JoinError> for VMError {
@@ -45,7 +50,15 @@ impl From<JoinError> for VMError {
     }
 }
 
+impl From<StorageError> for VMError {
+    fn from(err: StorageError) -> Self {
+        VMError::StorageError(err)
+    }
+}
+
 #[async_trait]
 pub trait VM {
-    async fn process(&self, block: Block) -> Result<(), VMError>;
+    // use mut to avoid currently processing multiple blocks
+    async fn process(&mut self, block: Block) -> Result<(), VMError>;
+    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError>;
 }

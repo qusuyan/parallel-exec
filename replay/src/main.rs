@@ -205,7 +205,7 @@ fn main() {
                             transactions: std::mem::take(&mut cur_block),
                         };
 
-                        let vm = args.vm_type.new(args.statedb_type);
+                        let mut vm = args.vm_type.new(args.statedb_type);
                         let start = std::time::Instant::now();
                         vm.process(new_block).await.unwrap();
                         let duration = start.elapsed();
@@ -254,7 +254,7 @@ fn main() {
                 transactions: std::mem::take(&mut cur_block),
             };
 
-            let vm = args.vm_type.new(args.statedb_type);
+            let mut vm = args.vm_type.new(args.statedb_type);
             let start = std::time::Instant::now();
             vm.process(new_block).await.unwrap();
             let duration = start.elapsed();

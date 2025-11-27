@@ -1,16 +1,16 @@
 use super::{VM, VMError};
 use crate::statedb::{StateDBError, ValidationSets};
-use crate::storage::{MVStorage, StorageError};
+use crate::storage::{MVStorage, Storage, StorageError};
 use crate::txn::TxnError;
-use crate::{Block, StateDBType, Transaction, TxnID};
+use crate::{Block, Key, StateDBType, Transaction, TxnID, VersionRaw};
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use std::sync::{Mutex, MutexGuard};
 use tokio::runtime::Handle;
+use tokio::sync::{Mutex, MutexGuard};
 
 #[derive(Debug)]
 enum TxnStatus {
@@ -94,9 +94,9 @@ impl Scheduler {
     }
 
     // return a new incarnate number if the requested txn is ready to execute
-    fn try_exec_incarnate(&self, txn_id: TxnID) -> Option<u32> {
+    async fn try_exec_incarnate(&self, txn_id: TxnID) -> Option<u32> {
         if let Some(entry) = self.txn_info.get(txn_id) {
-            let guard = entry.status.lock().expect("poisoned lock");
+            let guard = entry.status.lock().await;
             return self.try_exec_incarnate_unsafe(guard);
         }
         None
@@ -115,9 +115,9 @@ impl Scheduler {
     }
 
     // return a new incarnate number if the requested txn is ready to be validated
-    fn try_validate_incarnate(&self, txn_id: TxnID) -> Option<u32> {
+    async fn try_validate_incarnate(&self, txn_id: TxnID) -> Option<u32> {
         if let Some(entry) = self.txn_info.get(txn_id) {
-            let guard = entry.status.lock().expect("poisoned lock");
+            let guard = entry.status.lock().await;
             let (ref incarnate_count, ref status, _) = *guard;
             if matches!(*status, TxnStatus::Executed) {
                 return Some(*incarnate_count);
@@ -128,80 +128,89 @@ impl Scheduler {
 
     // try getting the next txn to execute
     // TODO: this can be optimized to a channel of tasks - instead of scanning through table
-    fn next_version_to_execute(&self) -> Option<(TxnID, u32)> {
-        if self.execution_idx.load(Ordering::Relaxed) >= self.txn_info.len() {
+    async fn next_version_to_execute(&self) -> (TxnID, Option<u32>) {
+        let current_execution_idx = self.execution_idx.load(Ordering::Relaxed);
+        if current_execution_idx >= self.txn_info.len() {
             // we have checked all txns, none is ready to execute
             self.check_done();
-            return None;
+            return (current_execution_idx, None);
         }
 
         self.num_active_tasks.fetch_add(1, Ordering::Acquire); // ensure that next_idx fetch_add happens after this line
         let next_idx = self.execution_idx.fetch_add(1, Ordering::Relaxed);
 
-        let inc_num = self.try_exec_incarnate(next_idx);
-        if let Some(inc) = inc_num {
-            Some((next_idx, inc))
+        let inc_num = self.try_exec_incarnate(next_idx).await;
+        if inc_num.is_some() {
+            (next_idx, inc_num)
         } else {
             self.num_active_tasks.fetch_sub(1, Ordering::Release);
-            None
+            (next_idx, None)
         }
     }
 
     // try getting the next txn to validate
-    fn next_version_to_validate(&self) -> Option<(TxnID, u32)> {
-        if self.validation_idx.load(Ordering::Relaxed) >= self.txn_info.len() {
+    async fn next_version_to_validate(&self) -> (TxnID, Option<u32>) {
+        let current_validation_idx = self.validation_idx.load(Ordering::Relaxed);
+        if current_validation_idx >= self.txn_info.len() {
             // we have checked all txns, none is ready to validate
             self.check_done();
-            return None;
+            return (current_validation_idx, None);
         }
 
         self.num_active_tasks.fetch_add(1, Ordering::Acquire); // ensure that next_idx fetch_add happens after this line
         let next_idx = self.validation_idx.fetch_add(1, Ordering::Relaxed);
-        let inc_num = self.try_validate_incarnate(next_idx);
-        if let Some(inc) = inc_num {
-            Some((next_idx, inc))
+        let inc_num = self.try_validate_incarnate(next_idx).await;
+        if inc_num.is_some() {
+            (next_idx, inc_num)
         } else {
             self.num_active_tasks.fetch_sub(1, Ordering::Release);
-            None
+            (next_idx, None)
         }
     }
 
-    fn next_task(&self) -> Option<Task> {
-        while self.done_marking.load(Ordering::Relaxed) == false {
+    async fn next_task(&self) -> Option<Task> {
+        loop {
             // prioritize validation tasks
-            if self.validation_idx.load(Ordering::Relaxed)
-                < self.execution_idx.load(Ordering::Relaxed)
-            {
-                if let Some((txn_id, incarnate)) = self.next_version_to_validate() {
-                    return Some(Task::Validate { txn_id, incarnate });
-                }
-            } else {
-                if let Some((txn_id, incarnate)) = self.next_version_to_execute() {
-                    return Some(Task::Execute { txn_id, incarnate });
-                }
+            let (val_txn_id, inc) = self.next_version_to_validate().await;
+            if let Some(incarnate) = inc {
+                return Some(Task::Validate {
+                    txn_id: val_txn_id,
+                    incarnate,
+                });
+            }
+            let (exec_txn_id, inc) = self.next_version_to_execute().await;
+            if let Some(incarnate) = inc {
+                return Some(Task::Execute {
+                    txn_id: exec_txn_id,
+                    incarnate,
+                });
+            }
+            // we are done
+            if self.done_marking.load(Ordering::Relaxed) {
+                return None;
+            }
+            // we are not done but no task is available right now - yield to allow other tasks to proceed
+            if val_txn_id >= self.txn_info.len() && exec_txn_id >= self.txn_info.len() {
+                tokio::task::yield_now().await;
             }
         }
-        None
     }
 
     // add txn_id as a dependent of blocking_txn_id so that when blocking_txn_id finishes,
     // it can notify txn_id - return false if the blocking txn has finished execution
-    fn add_dependency(&self, txn_id: TxnID, blocking_txn_id: TxnID) -> bool {
+    async fn add_dependency(&self, txn_id: TxnID, blocking_txn_id: TxnID) -> bool {
         assert!(blocking_txn_id < txn_id); // avoid deadlock
         // we need to hold the lock for blocking_txn for the entire function so that:
         // 1. either we see the blocking txn has already executed, or
         // 2. when the blocking txn issues re-execution for this txn, it is in ABORTING state
-        let mut blocking_txn_guard = self.txn_info[blocking_txn_id]
-            .status
-            .lock()
-            .expect("poisoned lock");
+        let mut blocking_txn_guard = self.txn_info[blocking_txn_id].status.lock().await;
         let (_, ref blocking_txn_status, ref mut deps) = *blocking_txn_guard;
         if matches!(*blocking_txn_status, TxnStatus::Executed) {
             // the blocking txn has already executed
             return false;
         }
         // mark the current txn abort so that it will not be re-executed until blocking_txn_id finishes
-        let mut guard = self.txn_info[txn_id].status.lock().expect("poisoned lock");
+        let mut guard = self.txn_info[txn_id].status.lock().await;
         let (_, ref mut status, _) = *guard;
         *status = TxnStatus::Aborting;
         // add txn_id as a dependent so that it will be re-executed when blocking_txn_id finishes
@@ -210,23 +219,20 @@ impl Scheduler {
     }
 
     // called when finish execution. It will mark the txn as executed, resume dependencies, and start validation tasks
-    fn finish_execution(
+    async fn finish_execution(
         &self,
         txn_id: TxnID,
         incarnation: u32,
         did_not_write_new_keys: bool,
     ) -> Option<Task> {
-        let mut guard = self.txn_info[txn_id].status.lock().expect("poisoned lock");
+        let mut guard = self.txn_info[txn_id].status.lock().await;
         let (ref inc, ref mut status, ref mut deps) = *guard;
         assert!(*inc == incarnation);
         *status = TxnStatus::Executed;
         // resume dependencies
         let dependencies = std::mem::take(deps);
         for dep_txn_id in dependencies.iter() {
-            let mut dep_guard = self.txn_info[*dep_txn_id]
-                .status
-                .lock()
-                .expect("poisoned lock");
+            let mut dep_guard = self.txn_info[*dep_txn_id].status.lock().await;
             let (ref mut dep_incarnate_number, ref mut dep_status, _) = *dep_guard;
             *dep_incarnate_number += 1;
             *dep_status = TxnStatus::Ready;
@@ -252,8 +258,8 @@ impl Scheduler {
     }
 
     // mark the txn as aborting - return true if the incarnation number matches and the txn is in Executed state
-    fn try_validation_abort(&self, txn_id: TxnID, incarnation: u32) -> bool {
-        let mut guard = self.txn_info[txn_id].status.lock().expect("poisoned lock");
+    async fn try_validation_abort(&self, txn_id: TxnID, incarnation: u32) -> bool {
+        let mut guard = self.txn_info[txn_id].status.lock().await;
         let (ref inc, ref mut status, _) = *guard;
         if *inc == incarnation && matches!(*status, TxnStatus::Executed) {
             *status = TxnStatus::Aborting;
@@ -262,10 +268,10 @@ impl Scheduler {
         false
     }
 
-    fn finish_validation(&self, txn_id: TxnID, aborted: bool) -> Option<Task> {
+    async fn finish_validation(&self, txn_id: TxnID, aborted: bool) -> Option<Task> {
         if aborted {
             // mark the txn ready for re-execution
-            let mut guard = self.txn_info[txn_id].status.lock().expect("poisoned lock");
+            let mut guard = self.txn_info[txn_id].status.lock().await;
             let (ref mut inc, ref mut status, _) = *guard;
             *inc += 1;
             *status = TxnStatus::Ready;
@@ -296,7 +302,7 @@ impl BlockSTMVM {
 
 #[async_trait::async_trait]
 impl VM for BlockSTMVM {
-    async fn process(&self, block: Block) -> Result<(), VMError> {
+    async fn process(&mut self, block: Block) -> Result<(), VMError> {
         // Initialize scheduler
         let sched = Arc::new(Scheduler::new(block.transactions));
         // Spawn worker threads
@@ -318,6 +324,13 @@ impl VM for BlockSTMVM {
         }
         Ok(())
     }
+
+    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError> {
+        let mut storage = Arc::new(MVStorage::new());
+        std::mem::swap(&mut self.storage, &mut storage);
+        let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
+        Ok(storage.finalized()?)
+    }
 }
 
 impl BlockSTMVM {
@@ -331,7 +344,7 @@ impl BlockSTMVM {
         loop {
             let current_task = match next_task.take() {
                 Some(task) => task,
-                None => match sched.next_task() {
+                None => match sched.next_task().await {
                     Some(task) => task,
                     None => {
                         // we are done
@@ -357,13 +370,14 @@ impl BlockSTMVM {
                             let did_not_write_new_keys =
                                 mv_memory.record(txn_id, incarnate, read_set, write_set);
                             // finish execution
-                            next_task =
-                                sched.finish_execution(txn_id, incarnate, did_not_write_new_keys);
+                            next_task = sched
+                                .finish_execution(txn_id, incarnate, did_not_write_new_keys)
+                                .await;
                         }
                         Err(TxnError::StateDBError(StateDBError::StorageError(
                             StorageError::ReadToBeModified(prev_tid),
                         ))) => {
-                            if !sched.add_dependency(txn_id, prev_tid) {
+                            if !sched.add_dependency(txn_id, prev_tid).await {
                                 // prev_tid has already executed, rerun the transaction
                                 next_task = Some(Task::Execute { txn_id, incarnate });
                             }
@@ -372,12 +386,12 @@ impl BlockSTMVM {
                 }
                 Task::Validate { txn_id, incarnate } => {
                     let valid = mv_memory.validate_read_set(txn_id);
-                    let aborted = !valid && sched.try_validation_abort(txn_id, incarnate);
+                    let aborted = !valid && sched.try_validation_abort(txn_id, incarnate).await;
                     if aborted {
                         mv_memory.convert_writes_to_estimates(txn_id);
                     }
                     // finish validation
-                    next_task = sched.finish_validation(txn_id, aborted);
+                    next_task = sched.finish_validation(txn_id, aborted).await;
                 }
             }
 

@@ -2,9 +2,11 @@
  * Sequential VM will execute and validate transactions in a block one by one.
  */
 use super::{VM, VMError};
-use crate::Block;
 use crate::statedb::StateDBType;
-use crate::storage::SimpleStorage;
+use crate::storage::{SimpleStorage, Storage};
+use crate::{Block, Key, VersionRaw};
+
+use std::collections::HashMap;
 
 pub struct SequentialVM {
     statedb_type: StateDBType,
@@ -22,7 +24,7 @@ impl SequentialVM {
 
 #[async_trait::async_trait]
 impl VM for SequentialVM {
-    async fn process(&self, block: Block) -> Result<(), VMError> {
+    async fn process(&mut self, block: Block) -> Result<(), VMError> {
         for (i, txn) in block.transactions.into_iter().enumerate() {
             let result = txn
                 .execute(&self.storage, self.statedb_type.clone())
@@ -37,5 +39,11 @@ impl VM for SequentialVM {
             log::debug!("Committed txn {}", i);
         }
         Ok(())
+    }
+
+    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError> {
+        let mut storage = SimpleStorage::new();
+        std::mem::swap(&mut self.storage, &mut storage);
+        Ok(storage.finalized()?)
     }
 }

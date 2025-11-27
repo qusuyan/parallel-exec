@@ -5,9 +5,10 @@
  */
 use super::{VM, VMError};
 use crate::statedb::StateDBType;
-use crate::storage::SimpleStorage;
-use crate::{Block, WriteOp};
+use crate::storage::{SimpleStorage, Storage};
+use crate::{Block, Key, VersionRaw, WriteOp};
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct SequentialValidationVM {
@@ -26,7 +27,7 @@ impl SequentialValidationVM {
 
 #[async_trait::async_trait]
 impl VM for SequentialValidationVM {
-    async fn process(&self, block: Block) -> Result<(), VMError> {
+    async fn process(&mut self, block: Block) -> Result<(), VMError> {
         let mut reexec_count = 0;
         let mut resps = Vec::new();
         for txn in block.transactions.iter() {
@@ -74,5 +75,12 @@ impl VM for SequentialValidationVM {
         log::info!("Re-executed {} transactions", reexec_count);
 
         Ok(())
+    }
+
+    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError> {
+        let mut storage = Arc::new(SimpleStorage::new());
+        std::mem::swap(&mut self.storage, &mut storage);
+        let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
+        Ok(storage.finalized()?)
     }
 }

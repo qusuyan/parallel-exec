@@ -507,6 +507,7 @@ dependencies = [
  "dashmap",
  "log",
  "primitive-types",
+ "rand",
  "tokio",
 ]
 

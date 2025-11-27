@@ -74,9 +74,11 @@ impl Ord for Key {
 }
 
 // Version number, or None if it is the committed state
-pub type Version = Option<usize>;
+pub type VersionRaw = usize;
+pub type Version = Option<VersionRaw>;
 
 pub type TxnID = usize;
+#[derive(Clone)]
 pub struct Block {
     pub id: u64,
     pub transactions: Vec<Arc<dyn Transaction + Send + Sync>>,
