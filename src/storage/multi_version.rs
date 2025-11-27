@@ -43,7 +43,7 @@ impl MVStorage {
                 .storage
                 .entry(key.clone())
                 .or_insert_with(|| DashMap::new());
-            versions.insert(version, entry);
+            versions.insert(tid, entry);
         }
     }
 
