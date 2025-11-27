@@ -69,17 +69,26 @@ impl Scheduler {
     #[inline]
     fn decrease_execution_idx(&self, target_idx: TxnID) {
         self.execution_idx.fetch_min(target_idx, Ordering::Relaxed);
-        // self.decrease_count.fetch_add(1, Ordering::Relaxed);
+        self.decrease_count.fetch_add(1, Ordering::Release); // prevent reordering of execution_idx update
     }
 
     #[inline]
     fn decrease_validation_idx(&self, target_idx: TxnID) {
         self.validation_idx.fetch_min(target_idx, Ordering::Relaxed);
-        // self.decrease_count.fetch_add(1, Ordering::Relaxed);
+        self.decrease_count.fetch_add(1, Ordering::Release);
     }
 
     fn check_done(&self) {
-        // TODO: mark done
+        // Use acquire to ensure we read everything in order specified:
+        // decrease_count -> execution_idx/validation_idx -> num_active_tasks -> decrease_count again
+        let observed_decrease_count = self.decrease_count.load(Ordering::Acquire);
+        if self.execution_idx.load(Ordering::Acquire) >= self.txn_info.len()
+            && self.validation_idx.load(Ordering::Acquire) >= self.txn_info.len()
+            && self.num_active_tasks.load(Ordering::Acquire) == 0
+            && observed_decrease_count == self.decrease_count.load(Ordering::Acquire)
+        {
+            self.done_marking.store(true, Ordering::Relaxed);
+        }
     }
 
     // return a new incarnate number if the requested txn is ready to execute
@@ -120,11 +129,13 @@ impl Scheduler {
                 tokio::task::yield_now().await; // if done, next time wakeup it will see the done_marking flag
                 continue;
             }
+            self.num_active_tasks.fetch_add(1, Ordering::Acquire); // ensure that next_idx fetch_add happens after this line
             let next_idx = self.execution_idx.fetch_add(1, Ordering::Relaxed);
             if let Some(inc_num) = self.try_exec_incarnate(next_idx) {
                 // found a txn to execute
                 return Some((next_idx, inc_num));
             }
+            self.num_active_tasks.fetch_sub(1, Ordering::Release); // ensure that next_idx fetch_add happens before this line
         }
     }
 
@@ -141,11 +152,13 @@ impl Scheduler {
                 tokio::task::yield_now().await;
                 continue;
             }
+            self.num_active_tasks.fetch_add(1, Ordering::Acquire);
             let next_idx = self.validation_idx.fetch_add(1, Ordering::Relaxed);
             if let Some(inc_num) = self.try_validate_incarnate(next_idx) {
                 // found a txn to validate
                 return Some((next_idx, inc_num));
             }
+            self.num_active_tasks.fetch_sub(1, Ordering::Release);
         }
     }
 
@@ -174,6 +187,7 @@ impl Scheduler {
         *status = TxnStatus::Aborting;
         // add txn_id as a dependent so that it will be re-executed when blocking_txn_id finishes
         deps.insert(txn_id);
+        self.num_active_tasks.fetch_sub(1, Ordering::Release);
         true
     }
 
@@ -216,6 +230,7 @@ impl Scheduler {
                 self.decrease_validation_idx(txn_id);
             }
         }
+        self.num_active_tasks.fetch_sub(1, Ordering::Release);
         None
     }
 
@@ -244,6 +259,7 @@ impl Scheduler {
                     .map(|incarnate| Task::Execute { txn_id, incarnate });
             }
         }
+        self.num_active_tasks.fetch_sub(1, Ordering::Release);
         None
     }
 }
