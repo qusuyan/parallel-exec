@@ -43,8 +43,8 @@ impl Debug for TxnEntry {
 struct Scheduler {
     execution_idx: AtomicUsize,
     validation_idx: AtomicUsize,
-    decrease_count: AtomicUsize, // TODO: use it to read consistent execution_idx and validation_idx during check_done
-    num_active_tasks: AtomicUsize, // TODO: keep track of active tasks
+    decrease_count: AtomicUsize,
+    num_active_tasks: AtomicUsize,
     done_marking: AtomicBool,
     txn_info: Box<[TxnEntry]>,
 }

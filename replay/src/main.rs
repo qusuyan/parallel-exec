@@ -234,9 +234,18 @@ fn main() {
 
         // Process the last transaction and block
         if let Some((cur_blk_id, cur_txn_id)) = cur_txn.as_mut() {
+            let latency_line = lat_lines.next_line().await.unwrap().unwrap();
+            let [lat_blk_id, lat_txn_id, _gas_limit, _gas_used, latency] =
+                latency_line.trim().split(',').collect::<Vec<_>>()[..]
+            else {
+                panic!("Invalid latency line format");
+            };
+            assert_eq!(lat_blk_id, cur_blk_id);
+            assert_eq!(lat_txn_id, cur_txn_id);
+
             let new_txn = MockTransaction::new(
                 usize::from_str_radix(cur_txn_id, 16).unwrap(),
-                std::time::Duration::from_secs(0), // TODO
+                std::time::Duration::from_secs_f64(f64::from_str(latency).unwrap() / 1000.0),
                 std::mem::take(&mut cur_ops),
             );
             cur_block.push(Arc::new(new_txn) as Arc<dyn parallel_exec::Transaction + Send + Sync>);
