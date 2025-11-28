@@ -2,7 +2,7 @@ use super::{VM, VMError};
 use crate::statedb::{StateDBError, ValidationSets};
 use crate::storage::{MVStorage, Storage, StorageError};
 use crate::txn::TxnError;
-use crate::{Block, Key, StateDBType, Transaction, TxnID, VersionRaw};
+use crate::{Block, Key, StateDBType, Transaction, TxnID};
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -325,7 +325,7 @@ impl VM for BlockSTMVM {
         Ok(())
     }
 
-    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError> {
+    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
         let mut storage = Arc::new(MVStorage::new());
         std::mem::swap(&mut self.storage, &mut storage);
         let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;

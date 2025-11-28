@@ -8,7 +8,7 @@ pub(crate) use simple::SimpleStorage;
 mod multi_version;
 pub(crate) use multi_version::MVStorage;
 
-use crate::{Key, TxnID, Version, VersionRaw};
+use crate::{Key, TxnID, Version};
 
 use std::collections::HashMap;
 
@@ -19,5 +19,5 @@ pub enum StorageError {
 
 pub trait Storage: Sync + Send {
     fn get(&self, tid: TxnID, key: &Key) -> Result<Version, StorageError>;
-    fn finalized(self) -> Result<HashMap<Key, VersionRaw>, StorageError>;
+    fn finalized(self) -> Result<HashMap<Key, TxnID>, StorageError>;
 }

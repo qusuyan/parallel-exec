@@ -4,7 +4,7 @@
 use super::{VM, VMError};
 use crate::statedb::StateDBType;
 use crate::storage::{SimpleStorage, Storage};
-use crate::{Block, Key, VersionRaw};
+use crate::{Block, Key, TxnID};
 
 use std::collections::HashMap;
 
@@ -41,7 +41,7 @@ impl VM for SequentialVM {
         Ok(())
     }
 
-    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError> {
+    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
         let mut storage = SimpleStorage::new();
         std::mem::swap(&mut self.storage, &mut storage);
         Ok(storage.finalized()?)

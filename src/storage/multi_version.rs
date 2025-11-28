@@ -3,7 +3,7 @@
  * The nonce corresponds to incarnation number, which is unique per transaction attempt.
  */
 use super::{Storage, StorageError};
-use crate::{Key, TxnID, Version, VersionRaw, WriteOp};
+use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,7 +11,7 @@ use dashmap::DashMap;
 
 #[derive(Clone, Debug)]
 enum StorageEntry {
-    Version(VersionRaw),
+    Version(usize),
     Estimate,
 }
 
@@ -31,7 +31,7 @@ impl MVStorage {
     }
 
     #[inline]
-    fn version(tid: TxnID, nonce: u32) -> VersionRaw {
+    fn version(tid: TxnID, nonce: u32) -> usize {
         tid << 32 | nonce as usize
     }
 
@@ -144,7 +144,7 @@ impl Storage for MVStorage {
         }
     }
 
-    fn finalized(self) -> Result<HashMap<Key, VersionRaw>, StorageError> {
+    fn finalized(self) -> Result<HashMap<Key, TxnID>, StorageError> {
         let finalized_map = self
             .storage
             .into_iter()
@@ -153,11 +153,11 @@ impl Storage for MVStorage {
                 let max_version = versions
                     .into_iter()
                     .filter_map(|(tid, version)| match version {
-                        StorageEntry::Version(v) => Some((tid, v)),
+                        StorageEntry::Version(_) => Some(tid),
                         StorageEntry::Estimate => panic!("Estimate marks should have been removed"),
                     })
-                    .max_by_key(|(tid, _)| *tid);
-                max_version.map(|(_, v)| (key, v))
+                    .max();
+                max_version.map(|tid| (key, tid))
             })
             .collect();
         Ok(finalized_map)

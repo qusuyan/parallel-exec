@@ -14,7 +14,7 @@ pub use seq_val::SequentialValidationVM;
 use crate::statedb::StateDBType;
 use crate::storage::StorageError;
 use crate::txn::TxnError;
-use crate::{Block, Key, VersionRaw};
+use crate::{Block, Key, TxnID};
 
 use async_trait::async_trait;
 use tokio::task::JoinError;
@@ -60,5 +60,5 @@ impl From<StorageError> for VMError {
 pub trait VM {
     // use mut to avoid currently processing multiple blocks
     async fn process(&mut self, block: Block) -> Result<(), VMError>;
-    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError>;
+    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError>;
 }

@@ -74,8 +74,7 @@ impl Ord for Key {
 }
 
 // Version number, or None if it is the committed state
-pub type VersionRaw = usize;
-pub type Version = Option<VersionRaw>;
+pub type Version = Option<usize>;
 
 pub type TxnID = usize;
 #[derive(Clone)]

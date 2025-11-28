@@ -6,7 +6,7 @@
 use super::{VM, VMError};
 use crate::statedb::StateDBType;
 use crate::storage::{SimpleStorage, Storage};
-use crate::{Block, Key, VersionRaw, WriteOp};
+use crate::{Block, Key, TxnID, WriteOp};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -77,7 +77,7 @@ impl VM for SequentialValidationVM {
         Ok(())
     }
 
-    async fn commit(&mut self) -> Result<HashMap<Key, VersionRaw>, VMError> {
+    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
         let mut storage = Arc::new(SimpleStorage::new());
         std::mem::swap(&mut self.storage, &mut storage);
         let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
