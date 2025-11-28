@@ -95,7 +95,9 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> StateDBOp {
                 U256::from_str(state_key).unwrap(),
             )
         }
-        "SelfDestruct" => StateDBOp::SelfDestruct(U256::from_str(state_key).unwrap()),
+        "SelfDestruct" | "Selfdestruct6780" => {
+            StateDBOp::SelfDestruct(U256::from_str(state_key).unwrap())
+        }
         "CreateAccount" => StateDBOp::CreateAccount(U256::from_str(state_key).unwrap()),
         _ => {
             panic!("Unknown operation: {}", op);
