@@ -284,19 +284,27 @@ async fn parse_lat_csv(path: &str) -> HashMap<(u64, usize), Duration> {
 
     let mut lat_map = HashMap::new();
 
+    let mut next_print = None;
     while let Some(latency_line) = lat_lines.next_line().await.unwrap() {
         let [lat_blk_id, lat_txn_id, _gas_limit, _gas_used, latency] =
             latency_line.trim().split(',').collect::<Vec<_>>()[..]
         else {
             panic!("Invalid latency line format");
         };
+        let blk_id = u64::from_str(lat_blk_id).unwrap();
+        let txn_id = usize::from_str_radix(lat_txn_id, 16).unwrap();
         lat_map.insert(
-            (
-                u64::from_str(lat_blk_id).unwrap(),
-                usize::from_str_radix(lat_txn_id, 16).unwrap(),
-            ),
+            (blk_id, txn_id),
             Duration::from_secs_f64(f64::from_str(latency).unwrap() / 1000.0),
         );
+        if let Some(next) = next_print {
+            if blk_id >= next {
+                log::info!("Parsed latencies up to block {}", blk_id);
+            }
+            next_print = Some(next + 100000);
+        } else {
+            next_print = Some(blk_id / 100000 * 100000 + 100000);
+        }
     }
 
     lat_map
