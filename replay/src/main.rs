@@ -15,6 +15,20 @@ use primitive_types::U256;
 
 const GENESIS_ACCOUNT: U256 = U256([0, 0, 0x01000000, 0]);
 
+#[derive(Debug)]
+#[allow(unused)]
+enum ParseError {
+    InvalidOp,
+    WrongNumFields { expected: usize, found: usize },
+    InvalidHexKey(uint::FromHexError),
+}
+
+impl From<uint::FromHexError> for ParseError {
+    fn from(err: uint::FromHexError) -> Self {
+        ParseError::InvalidHexKey(err)
+    }
+}
+
 #[derive(Parser)]
 struct Args {
     /// IO trace file
@@ -42,68 +56,78 @@ struct Args {
     output_file: String,
 }
 
-fn parse_op(op: &str, state_key: &str, aux: &str) -> StateDBOp {
+fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseError> {
     match op {
-        "Exist" => StateDBOp::Exist(U256::from_str(state_key).unwrap()),
-        "Empty" => StateDBOp::Empty(U256::from_str(state_key).unwrap()),
-        "CheckEnoughBalance" => StateDBOp::CheckEnoughBalance(
-            U256::from_str(state_key).unwrap(),
-            U256::from_str(aux).unwrap(),
-        ),
-        "GetBalance" => StateDBOp::GetBalance(U256::from_str(state_key).unwrap()),
-        "GetNonce" => StateDBOp::GetNonce(U256::from_str(state_key).unwrap()),
+        "Exist" => Ok(StateDBOp::Exist(U256::from_str(state_key)?)),
+        "Empty" => Ok(StateDBOp::Empty(U256::from_str(state_key)?)),
+        "CheckEnoughBalance" => Ok(StateDBOp::CheckEnoughBalance(
+            U256::from_str(state_key)?,
+            U256::from_str(aux)?,
+        )),
+        "GetBalance" => Ok(StateDBOp::GetBalance(U256::from_str(state_key)?)),
+        "GetNonce" => Ok(StateDBOp::GetNonce(U256::from_str(state_key)?)),
         "GetCode" | "GetCodeHash" | "GetCodeSize" => {
-            StateDBOp::GetCode(U256::from_str(state_key).unwrap())
+            Ok(StateDBOp::GetCode(U256::from_str(state_key)?))
         }
         "GetState" => {
-            let [account_addr, state_key] = state_key.split('-').collect::<Vec<_>>()[..] else {
-                panic!("Invalid state key format for GetState");
+            let split_key = state_key.split('-').collect::<Vec<_>>();
+            let [account_addr, state_key] = split_key[..] else {
+                return Err(ParseError::WrongNumFields {
+                    expected: 2,
+                    found: split_key.len(),
+                });
             };
-            StateDBOp::GetState(
-                U256::from_str(account_addr).unwrap(),
-                U256::from_str(state_key).unwrap(),
-            )
+            Ok(StateDBOp::GetState(
+                U256::from_str(account_addr)?,
+                U256::from_str(state_key)?,
+            ))
         }
         "GetCommittedState" => {
-            let [account_addr, state_key] = state_key.split('-').collect::<Vec<_>>()[..] else {
-                panic!("Invalid state key format for GetCommittedState");
+            let split_key = state_key.split('-').collect::<Vec<_>>();
+            let [account_addr, state_key] = split_key[..] else {
+                return Err(ParseError::WrongNumFields {
+                    expected: 2,
+                    found: split_key.len(),
+                });
             };
-            StateDBOp::GetState(
-                U256::from_str(account_addr).unwrap(),
-                U256::from_str(state_key).unwrap(),
-            )
+            Ok(StateDBOp::GetState(
+                U256::from_str(account_addr)?,
+                U256::from_str(state_key)?,
+            ))
         }
-        "HasSelfDestructed" => StateDBOp::HasSelfDestructed(U256::from_str(state_key).unwrap()),
-        "AddBalance" => StateDBOp::AddBalance(
-            U256::from_str(state_key).unwrap(),
-            U256::from_str(aux).unwrap(),
-        ),
-        "SubBalance" => StateDBOp::SubBalance(
-            U256::from_str(state_key).unwrap(),
-            U256::from_str(aux).unwrap(),
-        ),
-        "SetBalance" => StateDBOp::SetBalance(
-            U256::from_str(state_key).unwrap(),
-            U256::from_str(aux).unwrap(),
-        ),
-        "SetNonce" => StateDBOp::SetNonce(U256::from_str(state_key).unwrap()),
-        "SetCode" => StateDBOp::SetCode(U256::from_str(state_key).unwrap()),
+        "HasSelfDestructed" => Ok(StateDBOp::HasSelfDestructed(U256::from_str(state_key)?)),
+        "AddBalance" => Ok(StateDBOp::AddBalance(
+            U256::from_str(state_key)?,
+            U256::from_str(aux)?,
+        )),
+        "SubBalance" => Ok(StateDBOp::SubBalance(
+            U256::from_str(state_key)?,
+            U256::from_str(aux)?,
+        )),
+        "SetBalance" => Ok(StateDBOp::SetBalance(
+            U256::from_str(state_key)?,
+            U256::from_str(aux)?,
+        )),
+        "SetNonce" => Ok(StateDBOp::SetNonce(U256::from_str(state_key)?)),
+        "SetCode" => Ok(StateDBOp::SetCode(U256::from_str(state_key)?)),
         "SetState" => {
-            let [account_addr, state_key] = state_key.split('-').collect::<Vec<_>>()[..] else {
-                panic!("Invalid state key format for SetState");
+            let split_key = state_key.split('-').collect::<Vec<_>>();
+            let [account_addr, state_key] = split_key[..] else {
+                return Err(ParseError::WrongNumFields {
+                    expected: 2,
+                    found: split_key.len(),
+                });
             };
-            StateDBOp::SetState(
-                U256::from_str(account_addr).unwrap(),
-                U256::from_str(state_key).unwrap(),
-            )
+            Ok(StateDBOp::SetState(
+                U256::from_str(account_addr)?,
+                U256::from_str(state_key)?,
+            ))
         }
         "SelfDestruct" | "Selfdestruct6780" => {
-            StateDBOp::SelfDestruct(U256::from_str(state_key).unwrap())
+            Ok(StateDBOp::SelfDestruct(U256::from_str(state_key)?))
         }
-        "CreateAccount" => StateDBOp::CreateAccount(U256::from_str(state_key).unwrap()),
-        _ => {
-            panic!("Unknown operation: {}", op);
-        }
+        "CreateAccount" => Ok(StateDBOp::CreateAccount(U256::from_str(state_key)?)),
+        _ => Err(ParseError::InvalidOp),
     }
 }
 
@@ -150,6 +174,7 @@ fn main() {
         let op_reader = BufReader::new(op_file);
         let mut op_lines = op_reader.lines();
         op_lines.next_line().await.unwrap(); // Skip header
+        let mut line_count = 1;
 
         let mut out_file = File::create(args.output_file).await.unwrap();
         let mut out_writer = BufWriter::new(&mut out_file);
@@ -162,17 +187,19 @@ fn main() {
         let mut cur_txn: Option<(String, String)> = None;
         let mut cur_ops = Vec::new();
         while let Some(line) = op_lines.next_line().await.unwrap() {
-            let [blk_id, txn_id, op, state_key, aux] =
-                line.trim().split(',').collect::<Vec<_>>()[..]
-            else {
-                panic!("Invalid line format");
+            line_count += 1;
+            let split_line = line.trim().split(',').collect::<Vec<_>>();
+            let [blk_id, txn_id, op, state_key, aux] = split_line[..] else {
+                panic!("{line_count}: Invalid line\"{line}\", expected 5 fields",);
             };
 
             match cur_txn.as_mut() {
                 Some((cur_blk_id, cur_txn_id)) => {
                     if cur_blk_id != blk_id || cur_txn_id != txn_id {
-                        let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16).unwrap();
-                        let blk_id_parsed = u64::from_str(cur_blk_id).unwrap();
+                        let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16)
+                            .expect(&format!("{line_count}: Invalid txn ID \"{cur_txn_id}\""));
+                        let blk_id_parsed = u64::from_str(cur_blk_id)
+                            .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
 
                         if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
                             let new_txn = MockTransaction::new(
@@ -184,9 +211,7 @@ fn main() {
                                 as Arc<dyn parallel_exec::Transaction + Send + Sync>);
                         } else {
                             log::warn!(
-                                "Latency not found for block {}, txn {}",
-                                cur_blk_id,
-                                cur_txn_id
+                                "Latency not found for block {cur_blk_id}, txn {cur_txn_id}",
                             );
                         };
                     }
@@ -194,12 +219,12 @@ fn main() {
                     if cur_blk_id != blk_id {
                         // Process the completed block
                         log::info!(
-                            "Executing block {}: {} transactions",
-                            cur_blk_id,
+                            "Executing block {cur_blk_id}: {} transactions",
                             cur_block.len()
                         );
 
-                        let blk_id_parsed = u64::from_str(cur_blk_id).unwrap();
+                        let blk_id_parsed = u64::from_str(cur_blk_id)
+                            .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
                         let new_block = Block {
                             id: blk_id_parsed,
                             transactions: std::mem::take(&mut cur_block),
@@ -226,7 +251,10 @@ fn main() {
                 }
             }
 
-            let operation = parse_op(op, state_key, aux);
+            let operation = match parse_op(op, state_key, aux) {
+                Ok(op) => op,
+                Err(e) => panic!("{line_count}: Error parsing operation \"{line}\": {e:?}",),
+            };
             if !matches!(operation, StateDBOp::AddBalance(addr, _) if addr == GENESIS_ACCOUNT) {
                 cur_ops.push(operation);
             }
@@ -234,8 +262,10 @@ fn main() {
 
         // Process the last transaction and block
         if let Some((cur_blk_id, cur_txn_id)) = cur_txn.as_mut() {
-            let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16).unwrap();
-            let blk_id_parsed = u64::from_str(cur_blk_id).unwrap();
+            let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16)
+                .expect(&format!("{line_count}: Invalid txn ID \"{cur_txn_id}\""));
+            let blk_id_parsed = u64::from_str(cur_blk_id)
+                .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\"",));
 
             if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
                 let new_txn =
@@ -243,17 +273,12 @@ fn main() {
                 cur_block
                     .push(Arc::new(new_txn) as Arc<dyn parallel_exec::Transaction + Send + Sync>);
             } else {
-                log::warn!(
-                    "Latency not found for block {}, txn {}",
-                    cur_blk_id,
-                    cur_txn_id
-                );
+                log::warn!("Latency not found for block {cur_blk_id}, txn {cur_txn_id}",);
             };
 
             // Process the completed block
             log::info!(
-                "Executing block {}: {} transactions",
-                cur_blk_id,
+                "Executing block {cur_blk_id}: {} transactions",
                 cur_block.len()
             );
 
@@ -281,25 +306,31 @@ async fn parse_lat_csv(path: &str) -> HashMap<(u64, usize), Duration> {
     let lat_reader = BufReader::new(lat_file);
     let mut lat_lines = lat_reader.lines();
     lat_lines.next_line().await.unwrap(); // Skip header
+    let mut line_count = 1;
 
     let mut lat_map = HashMap::new();
 
     let mut next_print = None;
     while let Some(latency_line) = lat_lines.next_line().await.unwrap() {
+        line_count += 1;
         let [lat_blk_id, lat_txn_id, _gas_limit, _gas_used, latency] =
             latency_line.trim().split(',').collect::<Vec<_>>()[..]
         else {
-            panic!("Invalid latency line format");
+            panic!("{line_count}: Invalid latency line \"{latency_line}\", expected 5 fields",);
         };
-        let blk_id = u64::from_str(lat_blk_id).unwrap();
-        let txn_id = usize::from_str_radix(lat_txn_id, 16).unwrap();
+        let blk_id = u64::from_str(lat_blk_id)
+            .expect(&format!("{line_count}: Invalid block ID \"{lat_blk_id}\""));
+        let txn_id = usize::from_str_radix(lat_txn_id, 16)
+            .expect(&format!("{line_count}: Invalid txn ID \"{lat_txn_id}\""));
+        let latency_ms =
+            f64::from_str(latency).expect(&format!("{line_count}: Invalid latency \"{latency}\""));
         lat_map.insert(
             (blk_id, txn_id),
-            Duration::from_secs_f64(f64::from_str(latency).unwrap() / 1000.0),
+            Duration::from_secs_f64(latency_ms / 1000.0),
         );
         if let Some(next) = next_print {
             if blk_id >= next {
-                log::info!("Parsed latencies up to block {}", blk_id);
+                log::info!("Parsed latencies up to block {blk_id}");
             }
             next_print = Some(next + 100000);
         } else {
