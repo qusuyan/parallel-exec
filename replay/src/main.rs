@@ -21,11 +21,18 @@ enum ParseError {
     InvalidOp,
     WrongNumFields { expected: usize, found: usize },
     InvalidHexKey(uint::FromHexError),
+    InvalidNumber(uint::FromDecStrErr),
 }
 
 impl From<uint::FromHexError> for ParseError {
     fn from(err: uint::FromHexError) -> Self {
         ParseError::InvalidHexKey(err)
+    }
+}
+
+impl From<uint::FromDecStrErr> for ParseError {
+    fn from(err: uint::FromDecStrErr) -> Self {
+        ParseError::InvalidNumber(err)
     }
 }
 
@@ -62,7 +69,7 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
         "Empty" => Ok(StateDBOp::Empty(U256::from_str(state_key)?)),
         "CheckEnoughBalance" => Ok(StateDBOp::CheckEnoughBalance(
             U256::from_str(state_key)?,
-            U256::from_str(aux)?,
+            U256::from_dec_str(aux)?,
         )),
         "GetBalance" => Ok(StateDBOp::GetBalance(U256::from_str(state_key)?)),
         "GetNonce" => Ok(StateDBOp::GetNonce(U256::from_str(state_key)?)),
@@ -98,15 +105,15 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
         "HasSelfDestructed" => Ok(StateDBOp::HasSelfDestructed(U256::from_str(state_key)?)),
         "AddBalance" => Ok(StateDBOp::AddBalance(
             U256::from_str(state_key)?,
-            U256::from_str(aux)?,
+            U256::from_dec_str(aux)?,
         )),
         "SubBalance" => Ok(StateDBOp::SubBalance(
             U256::from_str(state_key)?,
-            U256::from_str(aux)?,
+            U256::from_dec_str(aux)?,
         )),
         "SetBalance" => Ok(StateDBOp::SetBalance(
             U256::from_str(state_key)?,
-            U256::from_str(aux)?,
+            U256::from_dec_str(aux)?,
         )),
         "SetNonce" => Ok(StateDBOp::SetNonce(U256::from_str(state_key)?)),
         "SetCode" => Ok(StateDBOp::SetCode(U256::from_str(state_key)?)),
