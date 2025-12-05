@@ -306,7 +306,9 @@ impl VM for BlockSTMVM {
         // Initialize scheduler
         let sched = Arc::new(Scheduler::new(block.transactions));
         // Spawn worker threads
-        let num_threads = Handle::current().metrics().num_workers();
+        let metrics = Handle::current().metrics();
+        let num_threads = metrics.num_workers() + metrics.num_blocking_threads();
+        log::debug!("Spawning {num_threads} worker threads");
         let handlers = (0..num_threads)
             .map(|id| {
                 tokio::spawn(Self::handler(
@@ -357,6 +359,7 @@ impl BlockSTMVM {
 
             match current_task {
                 Task::Execute { txn_id, incarnate } => {
+                    log::debug!("Executing Txn {} (incarnate {})", txn_id, incarnate);
                     match sched.txn_info[txn_id]
                         .txn
                         .execute(mv_memory.as_ref(), statedb_type.clone())
@@ -385,6 +388,7 @@ impl BlockSTMVM {
                     }
                 }
                 Task::Validate { txn_id, incarnate } => {
+                    log::debug!("Validating Txn {} (incarnate {})", txn_id, incarnate);
                     let valid = mv_memory.validate_read_set(txn_id);
                     let aborted = !valid && sched.try_validation_abort(txn_id, incarnate).await;
                     if aborted {

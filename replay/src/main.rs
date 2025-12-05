@@ -1,13 +1,13 @@
 use parallel_exec::{Block, MockTransaction, StateDBOp, StateDBType, VMType};
 
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::Write;
+use std::io::{BufRead, BufReader, BufWriter};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::runtime::Builder;
 
 use clap::Parser;
@@ -47,7 +47,7 @@ struct Args {
     lat_file: String,
 
     /// Number of worker threads
-    #[clap(short = 't', long, default_value = "4")]
+    #[clap(short = 't', long, default_value_t = 4)]
     threads: usize,
 
     /// VM type
@@ -169,156 +169,155 @@ fn main() {
         .init();
 
     let rt = Builder::new_multi_thread()
-        .worker_threads(args.threads)
-        .enable_all()
+        .worker_threads(args.threads - 1)
+        .max_blocking_threads(1)
+        .thread_keep_alive(Duration::from_hours(1))
         .build()
         .unwrap();
+    rt.spawn_blocking(|| {}); // spawn the blocking thread
 
-    rt.block_on(async {
-        let lat_map = parse_lat_csv(&args.lat_file).await;
+    let lat_map = parse_lat_csv(&args.lat_file);
 
-        let op_file = File::open(args.trace_file).await.unwrap();
-        let op_reader = BufReader::new(op_file);
-        let mut op_lines = op_reader.lines();
-        op_lines.next_line().await.unwrap(); // Skip header
-        let mut line_count = 1;
+    let op_file = File::open(args.trace_file).unwrap();
+    let op_reader = BufReader::new(op_file);
+    let mut op_lines = op_reader.lines();
+    op_lines.next().unwrap().unwrap(); // Skip header
+    let mut line_count = 1;
 
-        let mut out_file = File::create(args.output_file).await.unwrap();
-        let mut out_writer = BufWriter::new(&mut out_file);
-        out_writer
-            .write_all(b"block_id,execution_time\n")
-            .await
-            .unwrap();
+    let mut out_file = File::create(args.output_file).unwrap();
+    let mut out_writer = BufWriter::new(&mut out_file);
+    out_writer.write_all(b"block_id,execution_time\n").unwrap();
 
-        let mut cur_block = Vec::new();
-        let mut cur_txn: Option<(String, String)> = None;
-        let mut cur_ops = Vec::new();
-        while let Some(line) = op_lines.next_line().await.unwrap() {
-            line_count += 1;
-            let split_line = line.trim().split(',').collect::<Vec<_>>();
-            let [blk_id, txn_id, op, state_key, aux] = split_line[..] else {
-                panic!("{line_count}: Invalid line\"{line}\", expected 5 fields",);
-            };
+    let mut cur_block = Vec::new();
+    let mut cur_txn: Option<(String, String)> = None;
+    let mut cur_ops = Vec::new();
+    while let Some(line) = op_lines.next() {
+        let line = line.unwrap();
+        line_count += 1;
+        let split_line = line.trim().split(',').collect::<Vec<_>>();
+        let [blk_id, txn_id, op, state_key, aux] = split_line[..] else {
+            panic!("{line_count}: Invalid line\"{line}\", expected 5 fields",);
+        };
 
-            match cur_txn.as_mut() {
-                Some((cur_blk_id, cur_txn_id)) => {
-                    if cur_blk_id != blk_id || cur_txn_id != txn_id {
-                        let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16)
-                            .expect(&format!("{line_count}: Invalid txn ID \"{cur_txn_id}\""));
-                        let blk_id_parsed = u64::from_str(cur_blk_id)
-                            .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
+        match cur_txn.as_mut() {
+            Some((cur_blk_id, cur_txn_id)) => {
+                if cur_blk_id != blk_id || cur_txn_id != txn_id {
+                    let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16)
+                        .expect(&format!("{line_count}: Invalid txn ID \"{cur_txn_id}\""));
+                    let blk_id_parsed = u64::from_str(cur_blk_id)
+                        .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
 
-                        if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
-                            let new_txn = MockTransaction::new(
-                                txn_id_parsed,
-                                *latency,
-                                std::mem::take(&mut cur_ops),
-                            );
-                            cur_block.push(Arc::new(new_txn)
-                                as Arc<dyn parallel_exec::Transaction + Send + Sync>);
-                        } else {
-                            log::warn!(
-                                "Latency not found for block {cur_blk_id}, txn {cur_txn_id}",
-                            );
-                        };
-                    }
-
-                    if cur_blk_id != blk_id {
-                        // Process the completed block
-                        log::info!(
-                            "Executing block {cur_blk_id}: {} transactions",
-                            cur_block.len()
+                    if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
+                        let new_txn = MockTransaction::new(
+                            txn_id_parsed,
+                            *latency,
+                            std::mem::take(&mut cur_ops),
                         );
+                        cur_block
+                            .push(Arc::new(new_txn)
+                                as Arc<dyn parallel_exec::Transaction + Send + Sync>);
+                    } else {
+                        log::warn!("Latency not found for block {cur_blk_id}, txn {cur_txn_id}",);
+                    };
+                }
 
-                        let blk_id_parsed = u64::from_str(cur_blk_id)
-                            .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
-                        let new_block = Block {
-                            id: blk_id_parsed,
-                            transactions: std::mem::take(&mut cur_block),
-                        };
+                if cur_blk_id != blk_id {
+                    // Process the completed block
+                    log::info!(
+                        "Executing block {cur_blk_id}: {} transactions",
+                        cur_block.len()
+                    );
 
-                        let mut vm = args.vm_type.new(args.statedb_type);
-                        let start = std::time::Instant::now();
+                    let blk_id_parsed = u64::from_str(cur_blk_id)
+                        .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
+                    let new_block = Block {
+                        id: blk_id_parsed,
+                        transactions: std::mem::take(&mut cur_block),
+                    };
+
+                    let mut vm = args.vm_type.new(args.statedb_type);
+                    let start = std::time::Instant::now();
+                    rt.block_on(async {
                         vm.process(new_block).await.unwrap();
-                        let duration = start.elapsed();
-                        out_writer
-                            .write_all(
-                                format!("{},{}\n", blk_id_parsed, duration.as_secs_f64())
-                                    .as_bytes(),
-                            )
-                            .await
-                            .unwrap();
-                    }
+                    });
+                    let duration = start.elapsed();
+                    out_writer
+                        .write_all(
+                            format!("{},{}\n", blk_id_parsed, duration.as_secs_f64()).as_bytes(),
+                        )
+                        .unwrap();
+                }
 
-                    *cur_blk_id = blk_id.to_string();
-                    *cur_txn_id = txn_id.to_string();
-                }
-                None => {
-                    cur_txn = Some((blk_id.to_string(), txn_id.to_string()));
-                }
+                *cur_blk_id = blk_id.to_string();
+                *cur_txn_id = txn_id.to_string();
             }
-
-            let operation = match parse_op(op, state_key, aux) {
-                Ok(op) => op,
-                Err(e) => panic!("{line_count}: Error parsing operation \"{line}\": {e:?}",),
-            };
-            if !matches!(operation, StateDBOp::AddBalance(addr, _) if addr == GENESIS_ACCOUNT) {
-                cur_ops.push(operation);
+            None => {
+                cur_txn = Some((blk_id.to_string(), txn_id.to_string()));
             }
         }
 
-        // Process the last transaction and block
-        if let Some((cur_blk_id, cur_txn_id)) = cur_txn.as_mut() {
-            let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16)
-                .expect(&format!("{line_count}: Invalid txn ID \"{cur_txn_id}\""));
-            let blk_id_parsed = u64::from_str(cur_blk_id)
-                .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\"",));
+        let operation = match parse_op(op, state_key, aux) {
+            Ok(op) => op,
+            Err(e) => panic!("{line_count}: Error parsing operation \"{line}\": {e:?}",),
+        };
+        if !matches!(operation, StateDBOp::AddBalance(addr, _) if addr == GENESIS_ACCOUNT) {
+            cur_ops.push(operation);
+        }
+    }
 
-            if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
-                let new_txn =
-                    MockTransaction::new(txn_id_parsed, *latency, std::mem::take(&mut cur_ops));
-                cur_block
-                    .push(Arc::new(new_txn) as Arc<dyn parallel_exec::Transaction + Send + Sync>);
-            } else {
-                log::warn!("Latency not found for block {cur_blk_id}, txn {cur_txn_id}",);
-            };
+    // Process the last transaction and block
+    if let Some((cur_blk_id, cur_txn_id)) = cur_txn.as_mut() {
+        let txn_id_parsed = usize::from_str_radix(cur_txn_id, 16)
+            .expect(&format!("{line_count}: Invalid txn ID \"{cur_txn_id}\""));
+        let blk_id_parsed = u64::from_str(cur_blk_id)
+            .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\"",));
 
-            // Process the completed block
-            log::info!(
-                "Executing block {cur_blk_id}: {} transactions",
-                cur_block.len()
-            );
+        if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
+            let new_txn =
+                MockTransaction::new(txn_id_parsed, *latency, std::mem::take(&mut cur_ops));
+            cur_block.push(Arc::new(new_txn) as Arc<dyn parallel_exec::Transaction + Send + Sync>);
+        } else {
+            log::warn!("Latency not found for block {cur_blk_id}, txn {cur_txn_id}",);
+        };
 
-            let new_block = Block {
-                id: blk_id_parsed,
-                transactions: std::mem::take(&mut cur_block),
-            };
+        // Process the completed block
+        log::info!(
+            "Executing block {cur_blk_id}: {} transactions",
+            cur_block.len()
+        );
 
-            let mut vm = args.vm_type.new(args.statedb_type);
-            let start = std::time::Instant::now();
+        let new_block = Block {
+            id: blk_id_parsed,
+            transactions: std::mem::take(&mut cur_block),
+        };
+
+        let mut vm = args.vm_type.new(args.statedb_type);
+        let start = std::time::Instant::now();
+        rt.block_on(async {
             vm.process(new_block).await.unwrap();
-            let duration = start.elapsed();
-            out_writer
-                .write_all(format!("{},{}\n", blk_id_parsed, duration.as_secs_f64()).as_bytes())
-                .await
-                .unwrap();
-        }
+        });
+        let duration = start.elapsed();
+        out_writer
+            .write_all(format!("{},{}\n", blk_id_parsed, duration.as_secs_f64()).as_bytes())
+            .unwrap();
+    }
 
-        out_writer.flush().await.unwrap();
-    });
+    out_writer.flush().unwrap();
+    rt.block_on(async {});
 }
 
-async fn parse_lat_csv(path: &str) -> HashMap<(u64, usize), Duration> {
-    let lat_file = File::open(path).await.unwrap();
+fn parse_lat_csv(path: &str) -> HashMap<(u64, usize), Duration> {
+    let lat_file = File::open(path).unwrap();
     let lat_reader = BufReader::new(lat_file);
     let mut lat_lines = lat_reader.lines();
-    lat_lines.next_line().await.unwrap(); // Skip header
+    lat_lines.next().unwrap().unwrap(); // Skip header
     let mut line_count = 1;
 
     let mut lat_map = HashMap::new();
 
     let mut next_print = None;
-    while let Some(latency_line) = lat_lines.next_line().await.unwrap() {
+    while let Some(latency_line) = lat_lines.next() {
+        let latency_line = latency_line.unwrap();
         line_count += 1;
         let [lat_blk_id, lat_txn_id, _gas_limit, _gas_used, latency] =
             latency_line.trim().split(',').collect::<Vec<_>>()[..]

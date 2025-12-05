@@ -34,6 +34,11 @@ impl Transaction for MockTransaction {
         storage: &dyn Storage,
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError> {
+        log::debug!(
+            "{:?} Executing MockTransaction {}",
+            std::thread::current().id(),
+            self.id
+        );
         let start = Instant::now();
         let end = start + self.exec_time;
 
