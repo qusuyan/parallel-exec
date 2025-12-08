@@ -38,7 +38,7 @@ impl VMType {
 
 #[derive(Debug)]
 pub enum VMError {
-    TxnError { txn_id: u64, error: TxnError },
+    TxnError { txn_id: usize, error: TxnError },
     StorageError(StorageError),
     TokioRuntimeError(JoinError),
     CommitWhileProcessing,

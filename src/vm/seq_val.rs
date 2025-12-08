@@ -43,10 +43,10 @@ impl VM for SequentialValidationVM {
 
         // validate transactions in order
         for (i, resp) in resps.into_iter().enumerate() {
-            let exec_result = resp.await.unwrap().map_err(|error| VMError::TxnError {
-                txn_id: i as u64,
-                error,
-            })?;
+            let exec_result = resp
+                .await
+                .unwrap()
+                .map_err(|error| VMError::TxnError { txn_id: i, error })?;
             let success = self.storage.validate(i, &exec_result.read_set);
 
             // re-execute if validation failed
@@ -56,10 +56,7 @@ impl VM for SequentialValidationVM {
                 block.transactions[i]
                     .execute(self.storage.as_ref(), self.statedb_type.clone())
                     .await
-                    .map_err(|error| VMError::TxnError {
-                        txn_id: i as u64,
-                        error,
-                    })?;
+                    .map_err(|error| VMError::TxnError { txn_id: i, error })?;
             }
 
             // skip writes with zero increment

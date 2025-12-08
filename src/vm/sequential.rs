@@ -29,12 +29,7 @@ impl VM for SequentialVM {
             let result = txn
                 .execute(&self.storage, self.statedb_type.clone())
                 .await
-                .map_err(|error| -> VMError {
-                    VMError::TxnError {
-                        txn_id: i as u64,
-                        error,
-                    }
-                })?;
+                .map_err(|error| -> VMError { VMError::TxnError { txn_id: i, error } })?;
             self.storage.commit(i, result.write_set);
             log::debug!("Committed txn {}", i);
         }

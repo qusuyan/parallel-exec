@@ -385,6 +385,10 @@ impl BlockSTMVM {
                                 next_task = Some(Task::Execute { txn_id, incarnate });
                             }
                         }
+                        Err(error) => {
+                            // other errors are not expected
+                            return Err(VMError::TxnError { txn_id, error });
+                        }
                     }
                 }
                 Task::Validate { txn_id, incarnate } => {

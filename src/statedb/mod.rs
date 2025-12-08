@@ -43,6 +43,7 @@ pub enum StateDBOp {
 
 #[derive(Debug)]
 pub enum StateDBError {
+    ReadInconsistentVersions,
     StorageError(StorageError),
 }
 
