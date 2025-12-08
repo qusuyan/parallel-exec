@@ -54,7 +54,7 @@ impl VM for SequentialValidationVM {
                 reexec_count += 1;
                 // since all previous transactions are validated and committed, we don't need to check read set again
                 block.transactions[i]
-                    .execute(self.storage.as_ref(), self.statedb_type.clone())
+                    .reexecute(self.storage.as_ref(), self.statedb_type.clone())
                     .await
                     .map_err(|error| VMError::TxnError { txn_id: i, error })?;
             }

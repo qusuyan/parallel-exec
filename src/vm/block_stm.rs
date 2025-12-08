@@ -360,11 +360,14 @@ impl BlockSTMVM {
             match current_task {
                 Task::Execute { txn_id, incarnate } => {
                     log::debug!("Executing Txn {} (incarnate {})", txn_id, incarnate);
-                    match sched.txn_info[txn_id]
-                        .txn
-                        .execute(mv_memory.as_ref(), statedb_type.clone())
-                        .await
-                    {
+                    let txn = &sched.txn_info[txn_id].txn;
+                    let result = if incarnate == 0 {
+                        txn.execute(mv_memory.as_ref(), statedb_type.clone()).await
+                    } else {
+                        txn.reexecute(mv_memory.as_ref(), statedb_type.clone())
+                            .await
+                    };
+                    match result {
                         Ok(ValidationSets {
                             read_set,
                             write_set,
