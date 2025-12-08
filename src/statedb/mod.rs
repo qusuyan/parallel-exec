@@ -13,6 +13,7 @@ mod check_enough_balance;
 use check_enough_balance::CheckEnoughBalanceStateDB;
 
 use std::result::Result;
+use std::time::Duration;
 
 use crate::storage::{Storage, StorageError};
 use crate::{AccountAddress, Field, Key, StateKey, TxnID, Value, Version, WriteOp};
@@ -24,6 +25,8 @@ use std::collections::HashMap;
 pub struct StateDBOp {
     pub op_type: StateDBOpType,
     pub account: AccountAddress,
+    pub start_time: Duration,
+    pub storage_time: Duration,
 }
 
 #[derive(Debug)]

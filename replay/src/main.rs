@@ -22,6 +22,7 @@ enum ParseError {
     WrongNumFields { expected: usize, found: usize },
     InvalidHexKey(uint::FromHexError),
     InvalidNumber(uint::FromDecStrErr),
+    InvalidDuration(std::num::ParseIntError),
 }
 
 impl From<uint::FromHexError> for ParseError {
@@ -33,6 +34,12 @@ impl From<uint::FromHexError> for ParseError {
 impl From<uint::FromDecStrErr> for ParseError {
     fn from(err: uint::FromDecStrErr) -> Self {
         ParseError::InvalidNumber(err)
+    }
+}
+
+impl From<std::num::ParseIntError> for ParseError {
+    fn from(err: std::num::ParseIntError) -> Self {
+        ParseError::InvalidDuration(err)
     }
 }
 
@@ -63,31 +70,51 @@ struct Args {
     output_file: String,
 }
 
-fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseError> {
+fn parse_op(
+    start_time: &str,
+    storage_time: &str,
+    op: &str,
+    state_key: &str,
+    aux: &str,
+) -> Result<StateDBOp, ParseError> {
+    let start_time = Duration::from_nanos(start_time.parse()?);
+    let storage_time = Duration::from_nanos(storage_time.parse()?);
     match op {
         "Exist" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::Exist,
+            start_time,
+            storage_time,
         }),
         "Empty" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::Empty,
+            start_time,
+            storage_time,
         }),
         "CheckEnoughBalance" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::CheckEnoughBalance(U256::from_dec_str(aux)?),
+            start_time,
+            storage_time,
         }),
         "GetBalance" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::GetBalance,
+            start_time,
+            storage_time,
         }),
         "GetNonce" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::GetNonce,
+            start_time,
+            storage_time,
         }),
         "GetCode" | "GetCodeHash" | "GetCodeSize" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::GetCode,
+            start_time,
+            storage_time,
         }),
         "GetState" => {
             let split_key = state_key.split('-').collect::<Vec<_>>();
@@ -100,6 +127,8 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
             Ok(StateDBOp {
                 account: U256::from_str(account_addr)?,
                 op_type: StateDBOpType::GetState(U256::from_str(state_key)?),
+                start_time,
+                storage_time,
             })
         }
         "GetCommittedState" => {
@@ -113,31 +142,45 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
             Ok(StateDBOp {
                 account: U256::from_str(account_addr)?,
                 op_type: StateDBOpType::GetState(U256::from_str(state_key)?),
+                start_time,
+                storage_time,
             })
         }
         "HasSelfDestructed" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::HasSelfDestructed,
+            start_time,
+            storage_time,
         }),
         "AddBalance" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::AddBalance(U256::from_dec_str(aux)?),
+            start_time,
+            storage_time,
         }),
         "SubBalance" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::SubBalance(U256::from_dec_str(aux)?),
+            start_time,
+            storage_time,
         }),
         "SetBalance" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::SetBalance(U256::from_dec_str(aux)?),
+            start_time,
+            storage_time,
         }),
         "SetNonce" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::SetNonce,
+            start_time,
+            storage_time,
         }),
         "SetCode" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::SetCode,
+            start_time,
+            storage_time,
         }),
         "SetState" => {
             let split_key = state_key.split('-').collect::<Vec<_>>();
@@ -150,15 +193,21 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
             Ok(StateDBOp {
                 account: U256::from_str(account_addr)?,
                 op_type: StateDBOpType::SetState(U256::from_str(state_key)?),
+                start_time,
+                storage_time,
             })
         }
         "SelfDestruct" | "Selfdestruct6780" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::SelfDestruct,
+            start_time,
+            storage_time,
         }),
         "CreateAccount" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::CreateAccount,
+            start_time,
+            storage_time,
         }),
         _ => Err(ParseError::InvalidOp),
     }
@@ -221,7 +270,7 @@ fn main() {
         let line = line.unwrap();
         line_count += 1;
         let split_line = line.trim().split(',').collect::<Vec<_>>();
-        let [blk_id, txn_id, op, state_key, aux] = split_line[..] else {
+        let [blk_id, txn_id, start_time, storage_time, op, state_key, aux] = split_line[..] else {
             panic!("{line_count}: Invalid line\"{line}\", expected 5 fields",);
         };
 
@@ -282,7 +331,7 @@ fn main() {
             }
         }
 
-        let operation = match parse_op(op, state_key, aux) {
+        let operation = match parse_op(start_time, storage_time, op, state_key, aux) {
             Ok(op) => op,
             Err(e) => panic!("{line_count}: Error parsing operation \"{line}\": {e:?}",),
         };

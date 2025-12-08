@@ -11,7 +11,11 @@ use rand::{Rng, SeedableRng};
 use std::sync::Arc;
 use tokio::time::Duration;
 
-fn generate_random_statedb_op(rng: &mut StdRng, accounts: &Vec<AccountAddress>) -> StateDBOp {
+fn generate_random_statedb_op(
+    rng: &mut StdRng,
+    accounts: &Vec<AccountAddress>,
+    min_start_time: Duration,
+) -> StateDBOp {
     let op_type = rng.gen_range(0..=16);
     let address = accounts.choose(rng).unwrap().clone();
     let state_key = accounts.choose(rng).unwrap().clone();
@@ -36,9 +40,17 @@ fn generate_random_statedb_op(rng: &mut StdRng, accounts: &Vec<AccountAddress>) 
         16 => StateDBOpType::CreateAccount,
         _ => unreachable!(),
     };
+    let start_time = min_start_time + Duration::from_nanos(rng.gen_range(1000u64..10000u64));
+    let storage_time = if rng.gen_bool(0.6) {
+        Duration::from_secs(0)
+    } else {
+        Duration::from_nanos(rng.gen_range(100000u64..1000000u64))
+    };
     StateDBOp {
         account: address,
         op_type,
+        start_time,
+        storage_time,
     }
 }
 
@@ -49,8 +61,10 @@ fn generate_random_txn(
     accounts: &Vec<AccountAddress>,
 ) -> MockTransaction {
     let mut ops = Vec::with_capacity(txn_size);
+    let mut cur_time = Duration::from_secs(0);
     for _ in 0..txn_size {
-        let op = generate_random_statedb_op(rng, accounts);
+        let op = generate_random_statedb_op(rng, accounts, cur_time);
+        cur_time = op.start_time + op.storage_time;
         ops.push(op);
     }
     let exec_time = Duration::from_micros(10) * txn_size as u32

@@ -31,9 +31,18 @@ impl From<StateDBError> for TxnError {
 #[async_trait]
 pub trait Transaction {
     fn id(&self) -> TxnID;
+
     async fn execute(
         &self,
         statedb: &dyn Storage,
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError>;
+
+    async fn reexecute(
+        &self,
+        statedb: &dyn Storage,
+        statedb_type: StateDBType,
+    ) -> Result<ValidationSets, TxnError> {
+        self.execute(statedb, statedb_type).await
+    }
 }
