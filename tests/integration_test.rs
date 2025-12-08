@@ -1,5 +1,6 @@
 use parallel_exec::{
-    AccountAddress, Block, MockTransaction, StateDBOp, StateDBType, Transaction, VMType,
+    AccountAddress, Block, MockTransaction, StateDBOp, StateDBOpType, StateDBType, Transaction,
+    VMType,
 };
 use primitive_types::U256;
 
@@ -15,25 +16,29 @@ fn generate_random_statedb_op(rng: &mut StdRng, accounts: &Vec<AccountAddress>) 
     let address = accounts.choose(rng).unwrap().clone();
     let state_key = accounts.choose(rng).unwrap().clone();
     let amount = U256::from(rng.gen_range(1u64..1000u64));
-    match op_type {
-        0 => StateDBOp::Exist(address),
-        1 => StateDBOp::Empty(address),
-        2 => StateDBOp::GetBalance(address),
-        3 => StateDBOp::GetNonce(address),
-        4 => StateDBOp::GetCode(address),
-        5 => StateDBOp::GetState(address, state_key),
-        6 => StateDBOp::GetCommittedState(address, state_key),
-        7 => StateDBOp::HasSelfDestructed(address),
-        8 => StateDBOp::CheckEnoughBalance(address, amount),
-        9 => StateDBOp::AddBalance(address, amount),
-        10 => StateDBOp::SubBalance(address, amount),
-        11 => StateDBOp::SetBalance(address, amount),
-        12 => StateDBOp::SetNonce(address),
-        13 => StateDBOp::SetCode(address),
-        14 => StateDBOp::SetState(address, state_key),
-        15 => StateDBOp::SelfDestruct(address),
-        16 => StateDBOp::CreateAccount(address),
+    let op_type = match op_type {
+        0 => StateDBOpType::Exist,
+        1 => StateDBOpType::Empty,
+        2 => StateDBOpType::GetBalance,
+        3 => StateDBOpType::GetNonce,
+        4 => StateDBOpType::GetCode,
+        5 => StateDBOpType::GetState(state_key),
+        6 => StateDBOpType::GetCommittedState(state_key),
+        7 => StateDBOpType::HasSelfDestructed,
+        8 => StateDBOpType::CheckEnoughBalance(amount),
+        9 => StateDBOpType::AddBalance(amount),
+        10 => StateDBOpType::SubBalance(amount),
+        11 => StateDBOpType::SetBalance(amount),
+        12 => StateDBOpType::SetNonce,
+        13 => StateDBOpType::SetCode,
+        14 => StateDBOpType::SetState(state_key),
+        15 => StateDBOpType::SelfDestruct,
+        16 => StateDBOpType::CreateAccount,
         _ => unreachable!(),
+    };
+    StateDBOp {
+        account: address,
+        op_type,
     }
 }
 
