@@ -1,4 +1,4 @@
-use parallel_exec::{Block, MockTransaction, StateDBOp, StateDBType, VMType};
+use parallel_exec::{Block, MockTransaction, StateDBOp, StateDBOpType, StateDBType, VMType};
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -65,17 +65,30 @@ struct Args {
 
 fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseError> {
     match op {
-        "Exist" => Ok(StateDBOp::Exist(U256::from_str(state_key)?)),
-        "Empty" => Ok(StateDBOp::Empty(U256::from_str(state_key)?)),
-        "CheckEnoughBalance" => Ok(StateDBOp::CheckEnoughBalance(
-            U256::from_str(state_key)?,
-            U256::from_dec_str(aux)?,
-        )),
-        "GetBalance" => Ok(StateDBOp::GetBalance(U256::from_str(state_key)?)),
-        "GetNonce" => Ok(StateDBOp::GetNonce(U256::from_str(state_key)?)),
-        "GetCode" | "GetCodeHash" | "GetCodeSize" => {
-            Ok(StateDBOp::GetCode(U256::from_str(state_key)?))
-        }
+        "Exist" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::Exist,
+        }),
+        "Empty" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::Empty,
+        }),
+        "CheckEnoughBalance" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::CheckEnoughBalance(U256::from_dec_str(aux)?),
+        }),
+        "GetBalance" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::GetBalance,
+        }),
+        "GetNonce" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::GetNonce,
+        }),
+        "GetCode" | "GetCodeHash" | "GetCodeSize" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::GetCode,
+        }),
         "GetState" => {
             let split_key = state_key.split('-').collect::<Vec<_>>();
             let [account_addr, state_key] = split_key[..] else {
@@ -84,10 +97,10 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
                     found: split_key.len(),
                 });
             };
-            Ok(StateDBOp::GetState(
-                U256::from_str(account_addr)?,
-                U256::from_str(state_key)?,
-            ))
+            Ok(StateDBOp {
+                account: U256::from_str(account_addr)?,
+                op_type: StateDBOpType::GetState(U256::from_str(state_key)?),
+            })
         }
         "GetCommittedState" => {
             let split_key = state_key.split('-').collect::<Vec<_>>();
@@ -97,26 +110,35 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
                     found: split_key.len(),
                 });
             };
-            Ok(StateDBOp::GetState(
-                U256::from_str(account_addr)?,
-                U256::from_str(state_key)?,
-            ))
+            Ok(StateDBOp {
+                account: U256::from_str(account_addr)?,
+                op_type: StateDBOpType::GetState(U256::from_str(state_key)?),
+            })
         }
-        "HasSelfDestructed" => Ok(StateDBOp::HasSelfDestructed(U256::from_str(state_key)?)),
-        "AddBalance" => Ok(StateDBOp::AddBalance(
-            U256::from_str(state_key)?,
-            U256::from_dec_str(aux)?,
-        )),
-        "SubBalance" => Ok(StateDBOp::SubBalance(
-            U256::from_str(state_key)?,
-            U256::from_dec_str(aux)?,
-        )),
-        "SetBalance" => Ok(StateDBOp::SetBalance(
-            U256::from_str(state_key)?,
-            U256::from_dec_str(aux)?,
-        )),
-        "SetNonce" => Ok(StateDBOp::SetNonce(U256::from_str(state_key)?)),
-        "SetCode" => Ok(StateDBOp::SetCode(U256::from_str(state_key)?)),
+        "HasSelfDestructed" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::HasSelfDestructed,
+        }),
+        "AddBalance" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::AddBalance(U256::from_dec_str(aux)?),
+        }),
+        "SubBalance" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::SubBalance(U256::from_dec_str(aux)?),
+        }),
+        "SetBalance" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::SetBalance(U256::from_dec_str(aux)?),
+        }),
+        "SetNonce" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::SetNonce,
+        }),
+        "SetCode" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::SetCode,
+        }),
         "SetState" => {
             let split_key = state_key.split('-').collect::<Vec<_>>();
             let [account_addr, state_key] = split_key[..] else {
@@ -125,15 +147,19 @@ fn parse_op(op: &str, state_key: &str, aux: &str) -> Result<StateDBOp, ParseErro
                     found: split_key.len(),
                 });
             };
-            Ok(StateDBOp::SetState(
-                U256::from_str(account_addr)?,
-                U256::from_str(state_key)?,
-            ))
+            Ok(StateDBOp {
+                account: U256::from_str(account_addr)?,
+                op_type: StateDBOpType::SetState(U256::from_str(state_key)?),
+            })
         }
-        "SelfDestruct" | "Selfdestruct6780" => {
-            Ok(StateDBOp::SelfDestruct(U256::from_str(state_key)?))
-        }
-        "CreateAccount" => Ok(StateDBOp::CreateAccount(U256::from_str(state_key)?)),
+        "SelfDestruct" | "Selfdestruct6780" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::SelfDestruct,
+        }),
+        "CreateAccount" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::CreateAccount,
+        }),
         _ => Err(ParseError::InvalidOp),
     }
 }
@@ -260,7 +286,10 @@ fn main() {
             Ok(op) => op,
             Err(e) => panic!("{line_count}: Error parsing operation \"{line}\": {e:?}",),
         };
-        if !matches!(operation, StateDBOp::AddBalance(addr, _) if addr == GENESIS_ACCOUNT) {
+        // skip operation for burning gas fee
+        if !(operation.account == GENESIS_ACCOUNT
+            && matches!(operation.op_type, StateDBOpType::AddBalance(_)))
+        {
             cur_ops.push(operation);
         }
     }

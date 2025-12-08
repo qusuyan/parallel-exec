@@ -21,24 +21,30 @@ use primitive_types::U256;
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub enum StateDBOp {
-    Exist(AccountAddress),
-    Empty(AccountAddress),
-    GetBalance(AccountAddress),
-    GetNonce(AccountAddress),
-    GetCode(AccountAddress),
-    GetState(AccountAddress, StateKey),
-    GetCommittedState(AccountAddress, StateKey),
-    HasSelfDestructed(AccountAddress),
-    CheckEnoughBalance(AccountAddress, U256),
-    AddBalance(AccountAddress, U256),
-    SubBalance(AccountAddress, U256),
-    SetBalance(AccountAddress, U256),
-    SetNonce(AccountAddress),
-    SetCode(AccountAddress),
-    SetState(AccountAddress, StateKey),
-    SelfDestruct(AccountAddress),
-    CreateAccount(AccountAddress),
+pub struct StateDBOp {
+    pub op_type: StateDBOpType,
+    pub account: AccountAddress,
+}
+
+#[derive(Debug)]
+pub enum StateDBOpType {
+    Exist,
+    Empty,
+    GetBalance,
+    GetNonce,
+    GetCode,
+    GetState(StateKey),
+    GetCommittedState(StateKey),
+    HasSelfDestructed,
+    CheckEnoughBalance(U256),
+    AddBalance(U256),
+    SubBalance(U256),
+    SetBalance(U256),
+    SetNonce,
+    SetCode,
+    SetState(StateKey),
+    SelfDestruct,
+    CreateAccount,
 }
 
 #[derive(Debug)]

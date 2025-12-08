@@ -4,7 +4,7 @@ use std::sync::Arc;
 pub use txn::{MockTransaction, Transaction, WriteOp};
 
 mod statedb;
-pub use statedb::{StateDBOp, StateDBType};
+pub use statedb::{StateDBOp, StateDBOpType, StateDBType};
 
 mod storage;
 

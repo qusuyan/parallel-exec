@@ -8,7 +8,7 @@ use tokio::time::{Duration, Instant};
 
 use super::{Transaction, TxnError};
 use crate::TxnID;
-use crate::statedb::{StateDBOp, StateDBType, ValidationSets};
+use crate::statedb::{StateDBOp, StateDBOpType, StateDBType, ValidationSets};
 use crate::storage::Storage;
 
 pub struct MockTransaction {
@@ -44,58 +44,58 @@ impl Transaction for MockTransaction {
 
         let mut statedb = statedb_type.new(self.id, storage);
 
-        for op in &self.ops {
-            match op {
-                StateDBOp::Exist(address) => {
-                    statedb.exist(*address)?;
+        for StateDBOp { account, op_type } in &self.ops {
+            match op_type {
+                StateDBOpType::Exist => {
+                    statedb.exist(*account)?;
                 }
-                StateDBOp::Empty(address) => {
-                    statedb.empty(*address)?;
+                StateDBOpType::Empty => {
+                    statedb.empty(*account)?;
                 }
-                StateDBOp::GetBalance(address) => {
-                    statedb.get_balance(*address)?;
+                StateDBOpType::GetBalance => {
+                    statedb.get_balance(*account)?;
                 }
-                StateDBOp::GetNonce(address) => {
-                    statedb.get_nonce(*address)?;
+                StateDBOpType::GetNonce => {
+                    statedb.get_nonce(*account)?;
                 }
-                StateDBOp::GetCode(address) => {
-                    statedb.get_code(*address)?;
+                StateDBOpType::GetCode => {
+                    statedb.get_code(*account)?;
                 }
-                StateDBOp::GetState(address, state_key) => {
-                    statedb.get_state(*address, *state_key)?;
+                StateDBOpType::GetState(state_key) => {
+                    statedb.get_state(*account, *state_key)?;
                 }
-                StateDBOp::GetCommittedState(address, state_key) => {
-                    statedb.get_committed_state(*address, *state_key)?;
+                StateDBOpType::GetCommittedState(state_key) => {
+                    statedb.get_committed_state(*account, *state_key)?;
                 }
-                StateDBOp::HasSelfDestructed(address) => {
-                    statedb.has_self_destructed(*address)?;
+                StateDBOpType::HasSelfDestructed => {
+                    statedb.has_self_destructed(*account)?;
                 }
-                StateDBOp::CheckEnoughBalance(address, amount) => {
-                    statedb.check_enough_balance(*address, *amount)?;
+                StateDBOpType::CheckEnoughBalance(amount) => {
+                    statedb.check_enough_balance(*account, *amount)?;
                 }
-                StateDBOp::AddBalance(address, amount) => {
-                    statedb.add_balance(*address, *amount)?;
+                StateDBOpType::AddBalance(amount) => {
+                    statedb.add_balance(*account, *amount)?;
                 }
-                StateDBOp::SubBalance(address, amount) => {
-                    statedb.sub_balance(*address, *amount)?;
+                StateDBOpType::SubBalance(amount) => {
+                    statedb.sub_balance(*account, *amount)?;
                 }
-                StateDBOp::SetBalance(address, amount) => {
-                    statedb.set_balance(*address, *amount)?;
+                StateDBOpType::SetBalance(amount) => {
+                    statedb.set_balance(*account, *amount)?;
                 }
-                StateDBOp::SetNonce(address) => {
-                    statedb.set_nonce(*address)?;
+                StateDBOpType::SetNonce => {
+                    statedb.set_nonce(*account)?;
                 }
-                StateDBOp::SetCode(address) => {
-                    statedb.set_code(*address)?;
+                StateDBOpType::SetCode => {
+                    statedb.set_code(*account)?;
                 }
-                StateDBOp::SetState(address, state_key) => {
-                    statedb.set_state(*address, *state_key)?;
+                StateDBOpType::SetState(state_key) => {
+                    statedb.set_state(*account, *state_key)?;
                 }
-                StateDBOp::SelfDestruct(address) => {
-                    statedb.self_destruct(*address)?;
+                StateDBOpType::SelfDestruct => {
+                    statedb.self_destruct(*account)?;
                 }
-                StateDBOp::CreateAccount(address) => {
-                    statedb.create_account(*address)?;
+                StateDBOpType::CreateAccount => {
+                    statedb.create_account(*account)?;
                 }
             }
         }
