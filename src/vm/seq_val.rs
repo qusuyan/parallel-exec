@@ -4,8 +4,9 @@
  * transactions sequentially.
  */
 use super::{VM, VMError};
-use crate::statedb::StateDBType;
+use crate::statedb::{StateDBError, StateDBType};
 use crate::storage::{SimpleStorage, Storage};
+use crate::txn::TxnError;
 use crate::{Block, Key, TxnID, WriteOp};
 
 use std::collections::HashMap;
@@ -43,25 +44,37 @@ impl VM for SequentialValidationVM {
 
         // validate transactions in order
         for (i, resp) in resps.into_iter().enumerate() {
-            let exec_result = resp
-                .await
-                .unwrap()
-                .map_err(|error| VMError::TxnError { txn_id: i, error })?;
-            let success = self.storage.validate(i, &exec_result.read_set);
+            let exec_result = resp.await.unwrap();
+            let result = match exec_result {
+                Ok(result) => {
+                    if self.storage.validate(i, &result.read_set) {
+                        Some(result.write_set)
+                    } else {
+                        None
+                    }
+                }
+                Err(TxnError::StateDBError(StateDBError::ReadInconsistentVersions)) => None,
+                Err(error) => {
+                    return Err(VMError::TxnError { txn_id: i, error });
+                }
+            };
 
             // re-execute if validation failed
-            if !success {
-                reexec_count += 1;
-                // since all previous transactions are validated and committed, we don't need to check read set again
-                block.transactions[i]
-                    .reexecute(self.storage.as_ref(), self.statedb_type.clone())
-                    .await
-                    .map_err(|error| VMError::TxnError { txn_id: i, error })?;
-            }
+            let write_set_raw = match result {
+                Some(ws) => ws,
+                None => {
+                    reexec_count += 1;
+                    // since all previous transactions are validated and committed, we don't need to check read set again
+                    let exec_result = block.transactions[i]
+                        .reexecute(self.storage.as_ref(), self.statedb_type.clone())
+                        .await
+                        .map_err(|error| VMError::TxnError { txn_id: i, error })?;
+                    exec_result.write_set
+                }
+            };
 
             // skip writes with zero increment
-            let write_set = exec_result
-                .write_set
+            let write_set = write_set_raw
                 .into_iter()
                 .filter(|(_, write_op)| !matches!(write_op, WriteOp::Inc(val, _) if val.is_zero()))
                 .collect();

@@ -385,6 +385,7 @@ fn main() {
 }
 
 fn parse_lat_csv(path: &str) -> HashMap<(u64, usize), Duration> {
+    log::debug!("Parsing latency file {}", path);
     let lat_file = File::open(path).unwrap();
     let lat_reader = BufReader::new(lat_file);
     let mut lat_lines = lat_reader.lines();
@@ -406,12 +407,9 @@ fn parse_lat_csv(path: &str) -> HashMap<(u64, usize), Duration> {
             .expect(&format!("{line_count}: Invalid block ID \"{lat_blk_id}\""));
         let txn_id = usize::from_str_radix(lat_txn_id, 16)
             .expect(&format!("{line_count}: Invalid txn ID \"{lat_txn_id}\""));
-        let latency_ms =
-            f64::from_str(latency).expect(&format!("{line_count}: Invalid latency \"{latency}\""));
-        lat_map.insert(
-            (blk_id, txn_id),
-            Duration::from_secs_f64(latency_ms / 1000.0),
-        );
+        let latency_ns =
+            u64::from_str(latency).expect(&format!("{line_count}: Invalid latency \"{latency}\""));
+        lat_map.insert((blk_id, txn_id), Duration::from_nanos(latency_ns));
         if let Some(next) = next_print {
             if blk_id >= next {
                 log::info!("Parsed latencies up to block {blk_id}");
