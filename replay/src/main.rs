@@ -282,12 +282,9 @@ fn main() {
                     let blk_id_parsed = u64::from_str(cur_blk_id)
                         .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
 
+                    let ops = std::mem::take(&mut cur_ops);
                     if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
-                        let new_txn = MockTransaction::new(
-                            txn_id_parsed,
-                            *latency,
-                            std::mem::take(&mut cur_ops),
-                        );
+                        let new_txn = MockTransaction::new(txn_id_parsed, *latency, ops);
                         cur_block
                             .push(Arc::new(new_txn)
                                 as Arc<dyn parallel_exec::Transaction + Send + Sync>);
@@ -305,6 +302,9 @@ fn main() {
 
                     let blk_id_parsed = u64::from_str(cur_blk_id)
                         .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
+                    if blk_id_parsed % 100000 == 0 {
+                        print!("Processing block {blk_id_parsed}");
+                    }
                     let new_block = Block {
                         id: blk_id_parsed,
                         transactions: std::mem::take(&mut cur_block),
