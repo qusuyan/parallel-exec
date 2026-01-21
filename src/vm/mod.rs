@@ -2,14 +2,16 @@
  * Virtual Machine (VM) module. It specifies how the VM processes a block of transactions.
  */
 mod sequential;
-use std::collections::HashMap;
-
-pub use sequential::SequentialVM;
+use sequential::SequentialVM;
 
 mod block_stm;
+use block_stm::BlockSTMVM;
 
 mod seq_val;
-pub use seq_val::SequentialValidationVM;
+use seq_val::SequentialValidationVM;
+
+mod seq_val_priority;
+use seq_val_priority::SequentialValidationPriorityVM;
 
 use crate::statedb::StateDBType;
 use crate::storage::StorageError;
@@ -17,12 +19,14 @@ use crate::txn::TxnError;
 use crate::{Block, Key, TxnID};
 
 use async_trait::async_trait;
+use std::collections::HashMap;
 use tokio::task::JoinError;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum VMType {
     Sequential,
     SequentialValidation,
+    SequentialValidationPriority,
     BlockSTM,
 }
 
@@ -31,14 +35,17 @@ impl VMType {
         match self {
             VMType::Sequential => Box::new(SequentialVM::new(statedb_type)),
             VMType::SequentialValidation => Box::new(SequentialValidationVM::new(statedb_type)),
-            VMType::BlockSTM => Box::new(block_stm::BlockSTMVM::new(statedb_type)),
+            VMType::SequentialValidationPriority => {
+                Box::new(SequentialValidationPriorityVM::new(statedb_type))
+            }
+            VMType::BlockSTM => Box::new(BlockSTMVM::new(statedb_type)),
         }
     }
 }
 
 #[derive(Debug)]
 pub enum VMError {
-    TxnError { txn_id: usize, error: TxnError },
+    TxnError { txn_id: TxnID, error: TxnError },
     StorageError(StorageError),
     TokioRuntimeError(JoinError),
     CommitWhileProcessing,

@@ -31,6 +31,7 @@ impl From<StateDBError> for TxnError {
 #[async_trait]
 pub trait Transaction {
     fn id(&self) -> TxnID;
+    fn exec_time_est(&self) -> u128; // estimate how long txn will take to execute - it can be gas fee or any other metric
 
     async fn execute(
         &self,

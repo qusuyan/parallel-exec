@@ -29,6 +29,10 @@ impl Transaction for MockTransaction {
         self.id
     }
 
+    fn exec_time_est(&self) -> u128 {
+        self.exec_time.as_nanos()
+    }
+
     async fn execute(
         &self,
         storage: &dyn Storage,

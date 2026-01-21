@@ -9,7 +9,7 @@ pub use statedb::{StateDBOp, StateDBOpType, StateDBType};
 mod storage;
 
 mod vm;
-pub use vm::{SequentialVM, SequentialValidationVM, VM, VMType};
+pub use vm::{VM, VMType};
 
 use primitive_types::U256;
 
