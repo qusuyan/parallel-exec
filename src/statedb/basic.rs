@@ -45,13 +45,14 @@ impl<'a> StateDBBase for BasicStateDB<'a> {
             None => {}
         }
 
-        // read from statedb
-        let version = self.storage.get(self.id, &key)?;
-        if let Some(prev_ver) = self.read_set.insert(key, version) {
-            if prev_ver != version {
-                return Err(StateDBError::ReadInconsistentVersions);
-            }
+        // read from cached read set
+        if self.read_set.contains_key(&key) {
+            return Ok(Value::one());
         }
+
+        // read from storage
+        let version = self.storage.get(self.id, &key)?;
+        self.read_set.insert(key, version);
         Ok(Value::one())
     }
 }
