@@ -39,7 +39,7 @@ impl Transaction for MockTransaction {
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError> {
         log::debug!(
-            "{:?} Executing MockTransaction {}",
+            "{:?} Executing MockTransaction {:x}",
             std::thread::current().id(),
             self.id
         );
@@ -126,7 +126,7 @@ impl Transaction for MockTransaction {
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError> {
         log::debug!(
-            "{:?} Re-executing MockTransaction {}",
+            "{:?} Re-executing MockTransaction {:x}",
             std::thread::current().id(),
             self.id
         );

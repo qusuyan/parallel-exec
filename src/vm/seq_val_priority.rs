@@ -32,14 +32,14 @@ impl VM for SequentialValidationPriorityVM {
         let mut reexec_count = 0;
         let mut resps = BTreeMap::new();
 
-        // determine priority by execution time: txns with exec_time >= 10% of the max exec_time are high priority
+        // determine priority by execution time: txns with exec_time >= 25% of the max exec_time are high priority
         let threshold = block
             .transactions
             .iter()
             .map(|txn| txn.exec_time_est())
             .max()
             .unwrap_or(0)
-            / 10;
+            / 4;
 
         // first schedule high priority transactions
         for (order, txn) in block.transactions.iter().enumerate() {
@@ -105,7 +105,7 @@ impl VM for SequentialValidationPriorityVM {
                 .filter(|(_, write_op)| !matches!(write_op, WriteOp::Inc(val, _) if val.is_zero()))
                 .collect();
             self.storage.commit(i, write_set);
-            log::debug!("Committed txn {}", i);
+            log::debug!("Committed txn {:x}", i);
         }
 
         log::info!("Re-executed {} transactions", reexec_count);

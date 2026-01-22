@@ -359,7 +359,7 @@ impl BlockSTMVM {
 
             match current_task {
                 Task::Execute { txn_id, incarnate } => {
-                    log::debug!("Executing Txn {} (incarnate {})", txn_id, incarnate);
+                    log::debug!("Executing Txn {:x} (incarnate {})", txn_id, incarnate);
                     let txn = &sched.txn_info[txn_id].txn;
                     let result = if incarnate == 0 {
                         txn.execute(mv_memory.as_ref(), statedb_type.clone()).await
@@ -388,14 +388,14 @@ impl BlockSTMVM {
                                 next_task = Some(Task::Execute { txn_id, incarnate });
                             }
                         }
-                        Err(error) => {
-                            // other errors are not expected
-                            return Err(VMError::TxnError { txn_id, error });
+                        Err(TxnError::StateDBError(StateDBError::ReadInconsistentVersions)) => {
+                            // we read a value that is later written by a previous txn - abort and retry
+                            next_task = Some(Task::Execute { txn_id, incarnate });
                         }
                     }
                 }
                 Task::Validate { txn_id, incarnate } => {
-                    log::debug!("Validating Txn {} (incarnate {})", txn_id, incarnate);
+                    log::debug!("Validating Txn {:x} (incarnate {})", txn_id, incarnate);
                     let valid = mv_memory.validate_read_set(txn_id);
                     let aborted = !valid && sched.try_validation_abort(txn_id, incarnate).await;
                     if aborted {

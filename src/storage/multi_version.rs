@@ -92,13 +92,13 @@ impl MVStorage {
     // called when transaction fails - revert writes and leave an Estimate marker
     pub(crate) fn convert_writes_to_estimates(&self, tid: TxnID) {
         let write_keys = self.last_write_set.get(&tid).expect(&format!(
-            "Txn {}: converting writes to estimates before publishing write set",
+            "Txn {:x}: converting writes to estimates before publishing write set",
             tid
         ));
         for key in write_keys.iter() {
             if let Some(versions) = self.storage.get(key) {
                 let mut entry = versions.get_mut(&tid).expect(&format!(
-                    "Txn {}: entry {:?} in write set is missing",
+                    "Txn {:x}: entry {:?} in write set is missing",
                     tid, key
                 ));
                 *entry.value_mut() = StorageEntry::Estimate;

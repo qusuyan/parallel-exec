@@ -31,7 +31,7 @@ impl VM for SequentialVM {
                 .await
                 .map_err(|error| -> VMError { VMError::TxnError { txn_id: i, error } })?;
             self.storage.commit(i, result.write_set);
-            log::debug!("Committed txn {}", i);
+            log::debug!("Committed txn {:x}", i);
         }
         Ok(())
     }
