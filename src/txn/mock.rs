@@ -208,3 +208,24 @@ impl Transaction for MockTransaction {
         Ok(statedb.into_validation_sets())
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    use tokio::time::Instant;
+
+    #[tokio::test]
+    async fn test_time_resolution() {
+        let loops = 100;
+        let mut resolution = Vec::with_capacity(loops);
+        let mut prev = Instant::now();
+        for _ in 0..loops {
+            let cur = Instant::now();
+            resolution.push(cur.duration_since(prev).as_nanos());
+            prev = cur;
+        }
+
+        // mostly < 150ns
+        println!("{:?}", resolution);
+    }
+}

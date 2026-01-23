@@ -6,6 +6,7 @@ use std::io::Write;
 use std::io::{BufRead, BufReader, BufWriter};
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::runtime::Builder;
@@ -244,12 +245,14 @@ fn main() {
         .init();
 
     let rt = Builder::new_multi_thread()
-        .worker_threads(args.threads - 1)
+        .worker_threads(args.threads)
         .max_blocking_threads(1)
         .thread_keep_alive(Duration::from_hours(240)) // do not kill blocking threads
         .build()
         .unwrap();
-    rt.spawn_blocking(|| {}); // spawn the blocking thread - so that we have a total of `args.threads` threads
+    let kill_signal = Arc::new(AtomicBool::new(false));
+    let kill_signal_clone = kill_signal.clone();
+    rt.spawn_blocking(move || while !kill_signal_clone.load(Ordering::Relaxed) {}); // keep the blocking thread busy so it does not get used
 
     let lat_map = parse_lat_csv(&args.lat_file);
 
@@ -381,7 +384,7 @@ fn main() {
     }
 
     out_writer.flush().unwrap();
-    rt.block_on(async {});
+    kill_signal.store(true, Ordering::Relaxed);
 }
 
 fn parse_lat_csv(path: &str) -> HashMap<(u64, usize), Duration> {
