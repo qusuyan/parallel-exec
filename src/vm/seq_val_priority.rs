@@ -1,27 +1,23 @@
 /**
- * Sequential Validation VM will execute transactions in parallel but validate them in order.
- * Since we only know if re-execution is needed after validation, we have to re-execute failed
- * transactions sequentially.
+ * Sequential Validation Priority VM is similar to Sequential Validation VM, but it prioritizes
+ * the execution of transactions based on their estimated execution time.
  */
 use super::{VM, VMError};
-use crate::statedb::{StateDBError, StateDBType};
-use crate::storage::{SimpleStorage, Storage};
-use crate::txn::TxnError;
-use crate::{Block, Key, TxnID, WriteOp};
+use crate::statedb::StateDBType;
+use crate::vm::seq_val::SequentialValidationVM;
+use crate::{Block, Key, TxnID};
 
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::cmp::Reverse;
+use std::collections::{HashMap, VecDeque};
 
 pub struct SequentialValidationPriorityVM {
-    statedb_type: StateDBType,
-    storage: Arc<SimpleStorage>,
+    inner: SequentialValidationVM,
 }
 
 impl SequentialValidationPriorityVM {
     pub fn new(statedb_type: StateDBType) -> Self {
         Self {
-            statedb_type,
-            storage: Arc::new(SimpleStorage::new()),
+            inner: SequentialValidationVM::new(statedb_type),
         }
     }
 }
@@ -29,94 +25,40 @@ impl SequentialValidationPriorityVM {
 #[async_trait::async_trait]
 impl VM for SequentialValidationPriorityVM {
     async fn process(&mut self, block: Block) -> Result<(), VMError> {
-        let mut reexec_count = 0;
-        let mut resps = BTreeMap::new();
+        // determine priority by execution time estimate
+        let threshold1 = 8_000_000;
+        let threshold2 = 1_000_000;
 
-        // determine priority by execution time: txns with exec_time >= 25% of the max exec_time are high priority
-        let threshold = block
-            .transactions
-            .iter()
-            .map(|txn| txn.exec_time_est())
-            .max()
-            .unwrap_or(0)
-            / 4;
+        let mut high_priority_queue = Vec::with_capacity(block.transactions.len());
+        let mut medium_priority_queue = Vec::with_capacity(block.transactions.len());
+        let mut low_priority_queue = Vec::with_capacity(block.transactions.len());
 
-        // first schedule high priority transactions
-        for (order, txn) in block.transactions.iter().enumerate() {
-            if txn.exec_time_est() >= threshold {
-                let storage_ref = self.storage.clone();
-                let txn_ref = txn.clone();
-                let statedb_type = self.statedb_type.clone();
-                let handle = tokio::spawn(async move {
-                    txn_ref.execute(storage_ref.as_ref(), statedb_type).await
-                });
-                resps.insert(order, handle);
+        for (i, txn) in block.transactions.into_iter().enumerate() {
+            if txn.exec_time_est() >= threshold1 {
+                // high priority
+                high_priority_queue.push((i, txn));
+            } else if txn.exec_time_est() >= threshold2 {
+                // medium priority
+                medium_priority_queue.push((i, txn));
+            } else {
+                // low priority
+                low_priority_queue.push((i, txn));
             }
         }
 
-        // then schedule the other transactions
-        for (order, txn) in block.transactions.iter().enumerate() {
-            if !resps.contains_key(&order) {
-                let storage_ref = self.storage.clone();
-                let txn_ref = txn.clone();
-                let statedb_type = self.statedb_type.clone();
-                let handle = tokio::spawn(async move {
-                    txn_ref.execute(storage_ref.as_ref(), statedb_type).await
-                });
-                resps.insert(order, handle);
-            }
-        }
+        // sort high priority queue by execution time estimate in descending order
+        high_priority_queue.sort_by_key(|(_, txn)| Reverse(txn.exec_time_est()));
 
-        // validate transactions in order
-        for i in 0..block.transactions.len() {
-            let resp = resps.remove(&i).unwrap();
-            let exec_result = resp.await.unwrap();
-            let result = match exec_result {
-                Ok(result) => {
-                    if self.storage.validate(i, &result.read_set) {
-                        Some(result.write_set)
-                    } else {
-                        None
-                    }
-                }
-                Err(TxnError::StateDBError(StateDBError::ReadInconsistentVersions)) => None,
-                Err(error) => {
-                    return Err(VMError::TxnError { txn_id: i, error });
-                }
-            };
+        let exec_queue: VecDeque<_> = high_priority_queue
+            .into_iter()
+            .chain(medium_priority_queue.into_iter())
+            .chain(low_priority_queue.into_iter())
+            .collect();
 
-            // re-execute if validation failed
-            let write_set_raw = match result {
-                Some(ws) => ws,
-                None => {
-                    reexec_count += 1;
-                    // since all previous transactions are validated and committed, we don't need to check read set again
-                    let exec_result = block.transactions[i]
-                        .reexecute(self.storage.as_ref(), self.statedb_type.clone())
-                        .await
-                        .map_err(|error| VMError::TxnError { txn_id: i, error })?;
-                    exec_result.write_set
-                }
-            };
-
-            // skip writes with zero increment
-            let write_set = write_set_raw
-                .into_iter()
-                .filter(|(_, write_op)| !matches!(write_op, WriteOp::Inc(val, _) if val.is_zero()))
-                .collect();
-            self.storage.commit(i, write_set);
-            log::debug!("Committed txn {:x}", i);
-        }
-
-        log::info!("Re-executed {} transactions", reexec_count);
-
-        Ok(())
+        self.inner.process_with_exec_queue(exec_queue).await
     }
 
     async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
-        let mut storage = Arc::new(SimpleStorage::new());
-        std::mem::swap(&mut self.storage, &mut storage);
-        let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
-        Ok(storage.finalized()?)
+        self.inner.commit().await
     }
 }
