@@ -8,7 +8,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
 
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, MutexGuard};
@@ -376,8 +375,6 @@ impl BlockSTMVM {
         statedb_type: StateDBType,
     ) -> Result<(), VMError> {
         let mut next_task = None;
-        let mut exe_time = Duration::ZERO;
-        let mut val_time = Duration::ZERO;
         log::debug!("handler {id}: started");
         loop {
             let current_task = match next_task.take() {
@@ -395,8 +392,6 @@ impl BlockSTMVM {
 
             match current_task {
                 Task::Execute { txn_id, incarnate } => {
-                    log::debug!("handler {id}: executing Txn {txn_id:x} (incarnate {incarnate})");
-                    let start = Instant::now();
                     let txn = &sched.txn_info[txn_id].txn;
                     let result = if incarnate == 0 {
                         txn.execute(mv_memory.as_ref(), statedb_type.clone()).await
@@ -429,11 +424,8 @@ impl BlockSTMVM {
                             next_task = Some(Task::Execute { txn_id, incarnate });
                         }
                     }
-                    exe_time += Instant::now() - start;
                 }
                 Task::Validate { txn_id, incarnate } => {
-                    log::debug!("handler {id}: validating Txn {txn_id:x} (incarnate {incarnate})");
-                    let start = Instant::now();
                     let valid = mv_memory.validate_read_set(txn_id);
                     let aborted = !valid && sched.try_validation_abort(txn_id, incarnate);
                     if aborted {
@@ -441,7 +433,6 @@ impl BlockSTMVM {
                     }
                     // finish validation
                     next_task = sched.finish_validation(txn_id, aborted);
-                    val_time += Instant::now() - start;
                 }
             }
 
@@ -450,12 +441,6 @@ impl BlockSTMVM {
                 sched.num_active_tasks.fetch_sub(1, Ordering::Release);
             }
         }
-
-        log::debug!(
-            "handler {id}: execution time: {:},  validation time: {:}",
-            exe_time.as_secs_f64() * 1000.0,
-            val_time.as_secs_f64() * 1000.0
-        );
 
         Ok(())
     }
