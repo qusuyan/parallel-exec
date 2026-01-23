@@ -1,12 +1,12 @@
 #! /usr/bin/python3
 
-import os, argparse
+import os, argparse, json
 import subprocess
 
 from datetime import datetime
 
-VM_TYPES = ["seq_val", "block_stm"]
-STATEDB_TYPES = ["basic", "lazy-exec", "check-enough-balance"]
+VM_TYPES = ["sequential-validation", "block-stm"]
+STATEDB_TYPES = ["basic", "check-enough-balance"]
 
 def build_replay():
     print("Building replay tool...")
@@ -14,8 +14,16 @@ def build_replay():
     print("Replay tool built.")
 
 def run_bench(trace_file, latency_file, num_threads, out_prefix):
-    # Create output directory if it doesn't exist
-    os.makedirs(out_prefix, exist_ok=True)
+    # Write experiment setups
+    log_path = f"{out_prefix}META.log"
+    exp_dir = os.path.dirname(log_path)
+    os.makedirs(exp_dir, exist_ok=True)
+    with open(log_path, "w") as log_file:
+        json.dump({
+            "trace_file": trace_file,
+            "latency_file": latency_file,
+            "num_threads": num_threads,
+        }, log_file, indent=4)
 
     # Run sequential baseline
     print("Running sequential baseline...")
@@ -40,7 +48,7 @@ def run_bench(trace_file, latency_file, num_threads, out_prefix):
                 "--threads", str(num_threads),
                 "--vm-type", vm_type,
                 "--statedb-type", statedb_type,
-                "--output-file", f"{out_prefix}{vm_type}_{statedb_type}_{num_threads}.csv"
+                "--output-file", f"{out_prefix}{vm_type}_{statedb_type}.csv"
             ]
             subprocess.run(cmd, check=True)
 
