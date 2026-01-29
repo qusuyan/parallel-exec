@@ -81,7 +81,8 @@ ax2.plot(block_stm_check["speedup_diff"], cumulative, label="Block STM - Opt", c
 ax2.axvline(x=0.0, color="black", lw=0.5, label="No Speedup")
 
 ax2.legend()
+ax2.set_xlim(-5e-3, 25e-3)
 ax2.set_xlabel("Speedup over Sequential Execution (ms)")
 ax2.set_ylabel("Cumulative Density")
-ax2.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: x * 1000))
+ax2.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: round(x * 1000, 1)))
 fig2.savefig("difference.pdf")
