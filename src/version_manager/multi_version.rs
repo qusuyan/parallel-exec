@@ -2,7 +2,7 @@
  * Multi-Version Storage implementation based on Block-STM.
  * The nonce corresponds to incarnation number, which is unique per transaction attempt.
  */
-use super::{Storage, StorageError};
+use super::{VersionManager, VersionManagerError};
 use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::{HashMap, HashSet};
@@ -15,13 +15,13 @@ enum StorageEntry {
     Estimate,
 }
 
-pub(crate) struct MVStorage {
+pub(crate) struct MultiVersionManager {
     storage: DashMap<Key, DashMap<TxnID, StorageEntry>>,
     last_write_set: DashMap<TxnID, HashSet<Key>>,
     last_read_set: DashMap<TxnID, HashMap<Key, Version>>,
 }
 
-impl MVStorage {
+impl MultiVersionManager {
     pub(crate) fn new() -> Self {
         Self {
             storage: DashMap::new(),
@@ -125,8 +125,8 @@ impl MVStorage {
     }
 }
 
-impl Storage for MVStorage {
-    fn get(&self, tid: TxnID, key: &Key) -> Result<Version, StorageError> {
+impl VersionManager for MultiVersionManager {
+    fn get(&self, tid: TxnID, key: &Key) -> Result<Version, VersionManagerError> {
         let entry = self.storage.get(key).and_then(|versions| {
             // find the latest version less than tid
             versions
@@ -138,13 +138,13 @@ impl Storage for MVStorage {
         match entry {
             Some((_, StorageEntry::Version(v))) => Ok(Some(v)),
             Some((prev_tid, StorageEntry::Estimate)) => {
-                Err(StorageError::ReadToBeModified(prev_tid))
+                Err(VersionManagerError::ReadToBeModified(prev_tid))
             }
             None => Ok(None),
         }
     }
 
-    fn finalized(self) -> Result<HashMap<Key, TxnID>, StorageError> {
+    fn finalized(self) -> Result<HashMap<Key, TxnID>, VersionManagerError> {
         let finalized_map = self
             .storage
             .into_iter()

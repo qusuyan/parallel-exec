@@ -14,8 +14,8 @@ mod seq_val_priority;
 use seq_val_priority::SequentialValidationPriorityVM;
 
 use crate::statedb::StateDBType;
-use crate::storage::StorageError;
 use crate::txn::TxnError;
+use crate::version_manager::VersionManagerError;
 use crate::{Block, Key, TxnID};
 
 use async_trait::async_trait;
@@ -46,7 +46,7 @@ impl VMType {
 #[derive(Debug)]
 pub enum VMError {
     TxnError { txn_id: TxnID, error: TxnError },
-    StorageError(StorageError),
+    StorageError(VersionManagerError),
     TokioRuntimeError(JoinError),
     CommitWhileProcessing,
 }
@@ -57,8 +57,8 @@ impl From<JoinError> for VMError {
     }
 }
 
-impl From<StorageError> for VMError {
-    fn from(err: StorageError) -> Self {
+impl From<VersionManagerError> for VMError {
+    fn from(err: VersionManagerError) -> Self {
         VMError::StorageError(err)
     }
 }

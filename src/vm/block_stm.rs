@@ -1,7 +1,7 @@
 use super::{VM, VMError};
 use crate::statedb::{StateDBError, ValidationSets};
-use crate::storage::{MVStorage, Storage, StorageError};
 use crate::txn::TxnError;
+use crate::version_manager::{MultiVersionManager, VersionManager, VersionManagerError};
 use crate::{Block, Key, StateDBType, Transaction, TxnID};
 
 use std::collections::{HashMap, HashSet};
@@ -319,14 +319,14 @@ impl Scheduler {
 }
 
 pub struct BlockSTMVM {
-    storage: Arc<MVStorage>,
+    storage: Arc<MultiVersionManager>,
     statedb_type: StateDBType,
 }
 
 impl BlockSTMVM {
     pub fn new(statedb_type: StateDBType) -> Self {
         Self {
-            storage: Arc::new(MVStorage::new()),
+            storage: Arc::new(MultiVersionManager::new()),
             statedb_type,
         }
     }
@@ -360,7 +360,7 @@ impl VM for BlockSTMVM {
     }
 
     async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
-        let mut storage = Arc::new(MVStorage::new());
+        let mut storage = Arc::new(MultiVersionManager::new());
         std::mem::swap(&mut self.storage, &mut storage);
         let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
         Ok(storage.finalized()?)
@@ -371,7 +371,7 @@ impl BlockSTMVM {
     async fn handler(
         id: usize,
         sched: Arc<Scheduler>,
-        mv_memory: Arc<MVStorage>,
+        mv_memory: Arc<MultiVersionManager>,
         statedb_type: StateDBType,
     ) -> Result<(), VMError> {
         let mut next_task = None;
@@ -412,7 +412,7 @@ impl BlockSTMVM {
                                 sched.finish_execution(txn_id, incarnate, did_not_write_new_keys);
                         }
                         Err(TxnError::StateDBError(StateDBError::StorageError(
-                            StorageError::ReadToBeModified(prev_tid),
+                            VersionManagerError::ReadToBeModified(prev_tid),
                         ))) => {
                             if !sched.add_dependency(txn_id, prev_tid) {
                                 // prev_tid has already executed, rerun the transaction

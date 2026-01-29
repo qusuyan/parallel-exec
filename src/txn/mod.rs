@@ -6,7 +6,7 @@ mod mock;
 pub use mock::MockTransaction;
 
 use crate::statedb::{StateDBError, StateDBType, ValidationSets};
-use crate::storage::Storage;
+use crate::version_manager::VersionManager;
 use crate::{TxnID, Value};
 
 use async_trait::async_trait;
@@ -35,13 +35,13 @@ pub trait Transaction {
 
     async fn execute(
         &self,
-        statedb: &dyn Storage,
+        statedb: &dyn VersionManager,
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError>;
 
     async fn reexecute(
         &self,
-        statedb: &dyn Storage,
+        statedb: &dyn VersionManager,
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError> {
         self.execute(statedb, statedb_type).await

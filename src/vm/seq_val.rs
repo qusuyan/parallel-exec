@@ -5,8 +5,8 @@
  */
 use super::{VM, VMError};
 use crate::statedb::{StateDBError, StateDBType, ValidationSets};
-use crate::storage::{SimpleStorage, Storage};
 use crate::txn::TxnError;
+use crate::version_manager::{SingleVersionManager, VersionManager};
 use crate::{Block, Key, Transaction, TxnID, WriteOp};
 
 use std::collections::{HashMap, VecDeque};
@@ -99,14 +99,14 @@ impl TaskQueue {
 
 pub struct SequentialValidationVM {
     statedb_type: StateDBType,
-    storage: Arc<SimpleStorage>,
+    storage: Arc<SingleVersionManager>,
 }
 
 impl SequentialValidationVM {
     pub fn new(statedb_type: StateDBType) -> Self {
         Self {
             statedb_type,
-            storage: Arc::new(SimpleStorage::new()),
+            storage: Arc::new(SingleVersionManager::new()),
         }
     }
 
@@ -153,7 +153,7 @@ impl VM for SequentialValidationVM {
     }
 
     async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
-        let mut storage = Arc::new(SimpleStorage::new());
+        let mut storage = Arc::new(SingleVersionManager::new());
         std::mem::swap(&mut self.storage, &mut storage);
         let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
         Ok(storage.finalized()?)
@@ -164,7 +164,7 @@ impl SequentialValidationVM {
     async fn handler(
         id: usize,
         task_queue: Arc<TaskQueue>,
-        storage: Arc<SimpleStorage>,
+        storage: Arc<SingleVersionManager>,
         statedb_type: StateDBType,
         reexec_count: Arc<AtomicUsize>,
     ) -> Result<(), VMError> {

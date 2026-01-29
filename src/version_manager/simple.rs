@@ -1,18 +1,18 @@
 /**
  * A simple storage implementation based on DashMap.
  */
-use super::{Storage, StorageError};
+use super::{VersionManager, VersionManagerError};
 use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::HashMap;
 
 use dashmap::DashMap;
 
-pub(crate) struct SimpleStorage {
+pub(crate) struct SingleVersionManager {
     store: DashMap<Key, TxnID>,
 }
 
-impl SimpleStorage {
+impl SingleVersionManager {
     pub(crate) fn new() -> Self {
         Self {
             store: DashMap::new(),
@@ -36,12 +36,12 @@ impl SimpleStorage {
     }
 }
 
-impl Storage for SimpleStorage {
-    fn get(&self, _: TxnID, key: &Key) -> Result<Version, StorageError> {
+impl VersionManager for SingleVersionManager {
+    fn get(&self, _: TxnID, key: &Key) -> Result<Version, VersionManagerError> {
         Ok(self.store.get(key).map(|e| *e))
     }
 
-    fn finalized(self) -> Result<HashMap<Key, TxnID>, StorageError> {
+    fn finalized(self) -> Result<HashMap<Key, TxnID>, VersionManagerError> {
         Ok(self.store.into_iter().collect())
     }
 }

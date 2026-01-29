@@ -2,20 +2,20 @@
  * Basic StateDB implementation. It treats all operations as intended without any optimization.
  */
 use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
-use crate::storage::Storage;
+use crate::version_manager::VersionManager;
 use crate::{Key, TxnID, WriteOp};
 
 use std::collections::HashMap;
 
 pub(crate) struct BasicStateDB<'a> {
     id: TxnID,
-    storage: &'a dyn Storage,
+    storage: &'a dyn VersionManager,
     read_set: HashMap<Key, Version>,
     write_set: HashMap<Key, WriteOp>,
 }
 
 impl<'a> BasicStateDB<'a> {
-    pub fn new(id: TxnID, storage: &'a dyn Storage) -> Self {
+    pub fn new(id: TxnID, storage: &'a dyn VersionManager) -> Self {
         Self {
             id,
             storage,

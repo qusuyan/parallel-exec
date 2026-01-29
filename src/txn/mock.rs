@@ -9,7 +9,7 @@ use tokio::time::{Duration, Instant};
 use super::{Transaction, TxnError};
 use crate::TxnID;
 use crate::statedb::{StateDBOp, StateDBOpType, StateDBType, ValidationSets};
-use crate::storage::Storage;
+use crate::version_manager::VersionManager;
 
 pub struct MockTransaction {
     id: TxnID,
@@ -35,7 +35,7 @@ impl Transaction for MockTransaction {
 
     async fn execute(
         &self,
-        storage: &dyn Storage,
+        storage: &dyn VersionManager,
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError> {
         log::debug!(
@@ -122,7 +122,7 @@ impl Transaction for MockTransaction {
     // During re-execution, we skip storage access time since it is brought into cache during initial execution.
     async fn reexecute(
         &self,
-        storage: &dyn Storage,
+        storage: &dyn VersionManager,
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError> {
         log::debug!(
