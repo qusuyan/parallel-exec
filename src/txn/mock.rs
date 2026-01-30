@@ -43,11 +43,11 @@ impl Transaction for MockTransaction {
             std::thread::current().id(),
             self.id
         );
-        let start = Instant::now();
-        // skip storage access time - the CachedStore will do the storage access simulation
-        let mut cumulative_storage_time = Duration::from_secs(0);
 
         let mut statedb = statedb_type.new(self.id, storage);
+
+        // do not simulate storage access time here - the CachedStore will do it
+        let mut prev_comp_start = None;
 
         for StateDBOp {
             account,
@@ -56,9 +56,15 @@ impl Transaction for MockTransaction {
             storage_time,
         } in &self.ops
         {
-            let start_time = start + *start_time - cumulative_storage_time;
-            // busy spin until start_time
-            while Instant::now() < start_time {}
+            // busy spin until previous op's compute time is reached
+            let emu_start = Instant::now();
+            let prev_compute = match prev_comp_start {
+                Some(prev_comp_start) => *start_time - prev_comp_start,
+                None => Duration::ZERO,
+            };
+            prev_comp_start = Some(*start_time + *storage_time);
+            while Instant::now() < emu_start + prev_compute {}
+
             match op_type {
                 StateDBOpType::Exist => {
                     statedb.exist(*account)?;
@@ -112,11 +118,14 @@ impl Transaction for MockTransaction {
                     statedb.create_account(*account)?;
                 }
             }
-            cumulative_storage_time += *storage_time;
         }
 
         // busy spin for the rest of the execution time
-        let end = start + self.exec_time - cumulative_storage_time;
+        let end = Instant::now()
+            + match prev_comp_start {
+                Some(prev_comp_start) => self.exec_time - prev_comp_start,
+                None => Duration::ZERO,
+            };
         while Instant::now() < end {}
 
         Ok(statedb.into_validation_sets())
