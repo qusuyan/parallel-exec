@@ -15,7 +15,7 @@ use seq_val_priority::SequentialValidationPriorityVM;
 
 use crate::statedb::StateDBType;
 use crate::txn::TxnError;
-use crate::version_manager::VersionManagerError;
+use crate::version_store::VersionStoreError;
 use crate::{Block, Key, TxnID};
 
 use async_trait::async_trait;
@@ -31,14 +31,17 @@ pub enum VMType {
 }
 
 impl VMType {
-    pub fn new(&self, statedb_type: StateDBType) -> Box<dyn VM> {
+    pub fn new(&self, statedb_type: StateDBType, cache_size: usize) -> Box<dyn VM> {
         match self {
-            VMType::Sequential => Box::new(SequentialVM::new(statedb_type)),
-            VMType::SequentialValidation => Box::new(SequentialValidationVM::new(statedb_type)),
-            VMType::SequentialValidationPriority => {
-                Box::new(SequentialValidationPriorityVM::new(statedb_type))
+            VMType::Sequential => Box::new(SequentialVM::new(statedb_type, cache_size)),
+            VMType::SequentialValidation => {
+                Box::new(SequentialValidationVM::new(statedb_type, cache_size))
             }
-            VMType::BlockSTM => Box::new(BlockSTMVM::new(statedb_type)),
+            VMType::SequentialValidationPriority => Box::new(SequentialValidationPriorityVM::new(
+                statedb_type,
+                cache_size,
+            )),
+            VMType::BlockSTM => Box::new(BlockSTMVM::new(statedb_type, cache_size)),
         }
     }
 }
@@ -46,7 +49,7 @@ impl VMType {
 #[derive(Debug)]
 pub enum VMError {
     TxnError { txn_id: TxnID, error: TxnError },
-    StorageError(VersionManagerError),
+    StorageError(VersionStoreError),
     TokioRuntimeError(JoinError),
     CommitWhileProcessing,
 }
@@ -57,8 +60,8 @@ impl From<JoinError> for VMError {
     }
 }
 
-impl From<VersionManagerError> for VMError {
-    fn from(err: VersionManagerError) -> Self {
+impl From<VersionStoreError> for VMError {
+    fn from(err: VersionStoreError) -> Self {
         VMError::StorageError(err)
     }
 }

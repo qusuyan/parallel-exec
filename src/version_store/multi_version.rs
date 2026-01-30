@@ -1,8 +1,9 @@
+use super::storage::CacheStore;
 /**
  * Multi-Version Storage implementation based on Block-STM.
  * The nonce corresponds to incarnation number, which is unique per transaction attempt.
  */
-use super::{VersionManager, VersionManagerError};
+use super::{VersionStoreError, VersionedStore};
 use crate::{Key, TxnID, Version, WriteOp};
 
 use std::collections::{HashMap, HashSet};
@@ -15,16 +16,18 @@ enum StorageEntry {
     Estimate,
 }
 
-pub(crate) struct MultiVersionManager {
-    storage: DashMap<Key, DashMap<TxnID, StorageEntry>>,
+pub(crate) struct MultiVersionStorage {
+    storage: CacheStore,
+    version_manager: DashMap<Key, DashMap<TxnID, StorageEntry>>,
     last_write_set: DashMap<TxnID, HashSet<Key>>,
     last_read_set: DashMap<TxnID, HashMap<Key, Version>>,
 }
 
-impl MultiVersionManager {
-    pub(crate) fn new() -> Self {
+impl MultiVersionStorage {
+    pub(crate) fn new(cache_size: usize) -> Self {
         Self {
-            storage: DashMap::new(),
+            storage: CacheStore::new(cache_size),
+            version_manager: DashMap::new(),
             last_write_set: DashMap::new(),
             last_read_set: DashMap::new(),
         }
@@ -40,7 +43,7 @@ impl MultiVersionManager {
         for (key, _) in write_set {
             let entry = StorageEntry::Version(version);
             let versions = self
-                .storage
+                .version_manager
                 .entry(key.clone())
                 .or_insert_with(|| DashMap::new());
             versions.insert(tid, entry);
@@ -57,7 +60,7 @@ impl MultiVersionManager {
         let prev_keys = self.last_write_set.get(&tid);
         let ret = if let Some(prev_keys) = prev_keys {
             for key in prev_keys.difference(&new_keys) {
-                if let Some(versions) = self.storage.get(key) {
+                if let Some(versions) = self.version_manager.get(key) {
                     versions.remove(&tid);
                 }
             }
@@ -96,7 +99,7 @@ impl MultiVersionManager {
             tid
         ));
         for key in write_keys.iter() {
-            if let Some(versions) = self.storage.get(key) {
+            if let Some(versions) = self.version_manager.get(key) {
                 let mut entry = versions.get_mut(&tid).expect(&format!(
                     "Txn {:x}: entry {:?} in write set is missing",
                     tid, key
@@ -125,9 +128,9 @@ impl MultiVersionManager {
     }
 }
 
-impl VersionManager for MultiVersionManager {
-    fn get(&self, tid: TxnID, key: &Key) -> Result<Version, VersionManagerError> {
-        let entry = self.storage.get(key).and_then(|versions| {
+impl VersionedStore for MultiVersionStorage {
+    fn get(&self, tid: TxnID, key: &Key) -> Result<Version, VersionStoreError> {
+        let entry = self.version_manager.get(key).and_then(|versions| {
             // find the latest version less than tid
             versions
                 .iter()
@@ -138,15 +141,18 @@ impl VersionManager for MultiVersionManager {
         match entry {
             Some((_, StorageEntry::Version(v))) => Ok(Some(v)),
             Some((prev_tid, StorageEntry::Estimate)) => {
-                Err(VersionManagerError::ReadToBeModified(prev_tid))
+                Err(VersionStoreError::ReadToBeModified(prev_tid))
             }
-            None => Ok(None),
+            None => {
+                self.storage.read(key);
+                Ok(None)
+            }
         }
     }
 
-    fn finalized(self) -> Result<HashMap<Key, TxnID>, VersionManagerError> {
-        let finalized_map = self
-            .storage
+    fn finalize(&mut self) -> Result<HashMap<Key, TxnID>, VersionStoreError> {
+        let version_manager = std::mem::take(&mut self.version_manager);
+        let finalized_map = version_manager
             .into_iter()
             .filter_map(|(key, versions)| {
                 // get the latest committed version

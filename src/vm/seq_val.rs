@@ -6,7 +6,7 @@
 use super::{VM, VMError};
 use crate::statedb::{StateDBError, StateDBType, ValidationSets};
 use crate::txn::TxnError;
-use crate::version_manager::{SingleVersionManager, VersionManager};
+use crate::version_store::{SingleVersionStorage, VersionedStore};
 use crate::{Block, Key, Transaction, TxnID, WriteOp};
 
 use std::collections::{HashMap, VecDeque};
@@ -99,14 +99,14 @@ impl TaskQueue {
 
 pub struct SequentialValidationVM {
     statedb_type: StateDBType,
-    storage: Arc<SingleVersionManager>,
+    storage: Arc<SingleVersionStorage>,
 }
 
 impl SequentialValidationVM {
-    pub fn new(statedb_type: StateDBType) -> Self {
+    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
         Self {
             statedb_type,
-            storage: Arc::new(SingleVersionManager::new()),
+            storage: Arc::new(SingleVersionStorage::new(cache_size)),
         }
     }
 
@@ -153,10 +153,9 @@ impl VM for SequentialValidationVM {
     }
 
     async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
-        let mut storage = Arc::new(SingleVersionManager::new());
-        std::mem::swap(&mut self.storage, &mut storage);
-        let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
-        Ok(storage.finalized()?)
+        let storage = Arc::get_mut(&mut self.storage).ok_or(VMError::CommitWhileProcessing)?;
+        let finalized_map = storage.finalize()?;
+        Ok(finalized_map)
     }
 }
 
@@ -164,7 +163,7 @@ impl SequentialValidationVM {
     async fn handler(
         id: usize,
         task_queue: Arc<TaskQueue>,
-        storage: Arc<SingleVersionManager>,
+        storage: Arc<SingleVersionStorage>,
         statedb_type: StateDBType,
         reexec_count: Arc<AtomicUsize>,
     ) -> Result<(), VMError> {
@@ -206,9 +205,8 @@ impl SequentialValidationVM {
                         Some(ws) => ws,
                         None => {
                             reexec_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            // since all previous transactions are validated and committed, we don't need to check read set again
                             let exec_result = txn
-                                .reexecute(storage.as_ref(), statedb_type.clone())
+                                .execute(storage.as_ref(), statedb_type.clone())
                                 .await
                                 .map_err(|error| VMError::TxnError { txn_id, error })?;
                             exec_result.write_set

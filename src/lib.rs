@@ -6,7 +6,7 @@ pub use txn::{MockTransaction, Transaction, WriteOp};
 mod statedb;
 pub use statedb::{StateDBOp, StateDBOpType, StateDBType};
 
-mod version_manager;
+mod version_store;
 
 mod vm;
 pub use vm::{VM, VMType};

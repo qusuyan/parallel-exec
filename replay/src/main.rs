@@ -58,6 +58,10 @@ struct Args {
     #[clap(short = 't', long, default_value_t = 4)]
     threads: usize,
 
+    /// Cache size for storage (in key-value pairs)
+    #[clap(short = 'c', long, default_value_t = 0x1000000)]
+    cache_size: usize,
+
     /// VM type
     #[clap(short = 'e', long, default_value = "sequential")]
     vm_type: VMType,
@@ -313,7 +317,7 @@ fn main() {
                         transactions: std::mem::take(&mut cur_block),
                     };
 
-                    let mut vm = args.vm_type.new(args.statedb_type);
+                    let mut vm = args.vm_type.new(args.statedb_type, args.cache_size);
                     let start = std::time::Instant::now();
                     rt.block_on(async {
                         vm.process(new_block).await.unwrap();
@@ -372,7 +376,7 @@ fn main() {
             transactions: std::mem::take(&mut cur_block),
         };
 
-        let mut vm = args.vm_type.new(args.statedb_type);
+        let mut vm = args.vm_type.new(args.statedb_type, args.cache_size);
         let start = std::time::Instant::now();
         rt.block_on(async {
             vm.process(new_block).await.unwrap();

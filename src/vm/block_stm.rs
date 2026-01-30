@@ -1,7 +1,7 @@
 use super::{VM, VMError};
 use crate::statedb::{StateDBError, ValidationSets};
 use crate::txn::TxnError;
-use crate::version_manager::{MultiVersionManager, VersionManager, VersionManagerError};
+use crate::version_store::{MultiVersionStorage, VersionStoreError, VersionedStore};
 use crate::{Block, Key, StateDBType, Transaction, TxnID};
 
 use std::collections::{HashMap, HashSet};
@@ -319,14 +319,14 @@ impl Scheduler {
 }
 
 pub struct BlockSTMVM {
-    storage: Arc<MultiVersionManager>,
+    storage: Arc<MultiVersionStorage>,
     statedb_type: StateDBType,
 }
 
 impl BlockSTMVM {
-    pub fn new(statedb_type: StateDBType) -> Self {
+    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
         Self {
-            storage: Arc::new(MultiVersionManager::new()),
+            storage: Arc::new(MultiVersionStorage::new(cache_size)),
             statedb_type,
         }
     }
@@ -360,10 +360,9 @@ impl VM for BlockSTMVM {
     }
 
     async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
-        let mut storage = Arc::new(MultiVersionManager::new());
-        std::mem::swap(&mut self.storage, &mut storage);
-        let storage = Arc::try_unwrap(storage).map_err(|_| VMError::CommitWhileProcessing)?;
-        Ok(storage.finalized()?)
+        let storage = Arc::get_mut(&mut self.storage).ok_or(VMError::CommitWhileProcessing)?;
+        let finalized_map = storage.finalize()?;
+        Ok(finalized_map)
     }
 }
 
@@ -371,7 +370,7 @@ impl BlockSTMVM {
     async fn handler(
         id: usize,
         sched: Arc<Scheduler>,
-        mv_memory: Arc<MultiVersionManager>,
+        mv_memory: Arc<MultiVersionStorage>,
         statedb_type: StateDBType,
     ) -> Result<(), VMError> {
         let mut next_task = None;
@@ -393,12 +392,7 @@ impl BlockSTMVM {
             match current_task {
                 Task::Execute { txn_id, incarnate } => {
                     let txn = &sched.txn_info[txn_id].txn;
-                    let result = if incarnate == 0 {
-                        txn.execute(mv_memory.as_ref(), statedb_type.clone()).await
-                    } else {
-                        txn.reexecute(mv_memory.as_ref(), statedb_type.clone())
-                            .await
-                    };
+                    let result = txn.execute(mv_memory.as_ref(), statedb_type.clone()).await;
                     match result {
                         Ok(ValidationSets {
                             read_set,
@@ -412,7 +406,7 @@ impl BlockSTMVM {
                                 sched.finish_execution(txn_id, incarnate, did_not_write_new_keys);
                         }
                         Err(TxnError::StateDBError(StateDBError::StorageError(
-                            VersionManagerError::ReadToBeModified(prev_tid),
+                            VersionStoreError::ReadToBeModified(prev_tid),
                         ))) => {
                             if !sched.add_dependency(txn_id, prev_tid) {
                                 // prev_tid has already executed, rerun the transaction

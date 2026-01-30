@@ -15,9 +15,9 @@ pub struct SequentialValidationPriorityVM {
 }
 
 impl SequentialValidationPriorityVM {
-    pub fn new(statedb_type: StateDBType) -> Self {
+    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
         Self {
-            inner: SequentialValidationVM::new(statedb_type),
+            inner: SequentialValidationVM::new(statedb_type, cache_size),
         }
     }
 }

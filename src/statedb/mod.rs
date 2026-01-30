@@ -15,7 +15,7 @@ use check_enough_balance::CheckEnoughBalanceStateDB;
 use std::result::Result;
 use std::time::Duration;
 
-use crate::version_manager::{VersionManager, VersionManagerError};
+use crate::version_store::{VersionStoreError, VersionedStore};
 use crate::{AccountAddress, Field, Key, StateKey, TxnID, Value, Version, WriteOp};
 
 use primitive_types::U256;
@@ -53,11 +53,11 @@ pub enum StateDBOpType {
 #[derive(Debug)]
 pub enum StateDBError {
     ReadInconsistentVersions,
-    StorageError(VersionManagerError),
+    StorageError(VersionStoreError),
 }
 
-impl From<VersionManagerError> for StateDBError {
-    fn from(err: VersionManagerError) -> Self {
+impl From<VersionStoreError> for StateDBError {
+    fn from(err: VersionStoreError) -> Self {
         StateDBError::StorageError(err)
     }
 }
@@ -79,7 +79,7 @@ impl StateDBType {
     pub(crate) fn new<'a>(
         &self,
         id: TxnID,
-        storage: &'a dyn VersionManager,
+        storage: &'a dyn VersionedStore,
     ) -> Box<dyn StateDB + 'a> {
         match self {
             StateDBType::Basic => Box::new(BasicStateDB::new(id, storage)),

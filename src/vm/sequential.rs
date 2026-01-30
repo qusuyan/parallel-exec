@@ -3,21 +3,21 @@
  */
 use super::{VM, VMError};
 use crate::statedb::StateDBType;
-use crate::version_manager::{SingleVersionManager, VersionManager};
+use crate::version_store::{SingleVersionStorage, VersionedStore};
 use crate::{Block, Key, TxnID};
 
 use std::collections::HashMap;
 
 pub struct SequentialVM {
     statedb_type: StateDBType,
-    storage: SingleVersionManager,
+    storage: SingleVersionStorage,
 }
 
 impl SequentialVM {
-    pub fn new(statedb_type: StateDBType) -> Self {
+    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
         Self {
             statedb_type,
-            storage: SingleVersionManager::new(),
+            storage: SingleVersionStorage::new(cache_size),
         }
     }
 }
@@ -37,8 +37,6 @@ impl VM for SequentialVM {
     }
 
     async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
-        let mut storage = SingleVersionManager::new();
-        std::mem::swap(&mut self.storage, &mut storage);
-        Ok(storage.finalized()?)
+        Ok(self.storage.finalize()?)
     }
 }

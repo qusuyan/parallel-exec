@@ -115,10 +115,10 @@ fn test_block_stm() {
             .build()
             .unwrap();
         runtime.block_on(async {
-            let mut linear_vm = VMType::Sequential.new(StateDBType::Basic);
+            let mut linear_vm = VMType::Sequential.new(StateDBType::Basic, 0x1000000);
             linear_vm.process(block.clone()).await.unwrap();
             let linear_vm_result = linear_vm.commit().await.unwrap();
-            let mut block_stm_vm = VMType::BlockSTM.new(StateDBType::Basic);
+            let mut block_stm_vm = VMType::BlockSTM.new(StateDBType::Basic, 0x1000000);
             block_stm_vm.process(block).await.unwrap();
             let block_stm_vm_result = block_stm_vm.commit().await.unwrap();
             assert_eq!(linear_vm_result, block_stm_vm_result);
@@ -135,10 +135,10 @@ fn test_sequential_validation_vm() {
             .build()
             .unwrap();
         runtime.block_on(async {
-            let mut linear_vm = VMType::Sequential.new(StateDBType::Basic);
+            let mut linear_vm = VMType::Sequential.new(StateDBType::Basic, 0x1000000);
             linear_vm.process(block.clone()).await.unwrap();
             let linear_vm_result = linear_vm.commit().await.unwrap();
-            let mut seq_val_vm = VMType::SequentialValidation.new(StateDBType::Basic);
+            let mut seq_val_vm = VMType::SequentialValidation.new(StateDBType::Basic, 0x1000000);
             seq_val_vm.process(block).await.unwrap();
             let seq_val_vm_result = seq_val_vm.commit().await.unwrap();
             assert_eq!(linear_vm_result, seq_val_vm_result);
@@ -155,10 +155,11 @@ fn test_check_enough_balance() {
             .build()
             .unwrap();
         runtime.block_on(async {
-            let mut linear_vm = VMType::SequentialValidation.new(StateDBType::Basic);
+            let mut linear_vm = VMType::SequentialValidation.new(StateDBType::Basic, 0x1000000);
             linear_vm.process(block.clone()).await.unwrap();
             let linear_vm_result = linear_vm.commit().await.unwrap();
-            let mut seq_val_vm = VMType::SequentialValidation.new(StateDBType::CheckEnoughBalance);
+            let mut seq_val_vm =
+                VMType::SequentialValidation.new(StateDBType::CheckEnoughBalance, 0x1000000);
             seq_val_vm.process(block).await.unwrap();
             let seq_val_vm_result = seq_val_vm.commit().await.unwrap();
             assert_eq!(linear_vm_result, seq_val_vm_result);

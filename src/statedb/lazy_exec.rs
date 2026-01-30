@@ -4,7 +4,7 @@
  * reducing conflicts and improving parallelism.
  */
 use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
-use crate::version_manager::VersionManager;
+use crate::version_store::VersionedStore;
 use crate::{AccountAddress, Field, Key, TxnID, WriteOp};
 
 use std::collections::HashMap;
@@ -12,13 +12,13 @@ use std::collections::hash_map::Entry;
 
 pub(crate) struct LazyExecStateDB<'a> {
     id: TxnID,
-    storage: &'a dyn VersionManager,
+    storage: &'a dyn VersionedStore,
     read_set: HashMap<Key, Version>,
     write_set: HashMap<Key, WriteOp>,
 }
 
 impl<'a> LazyExecStateDB<'a> {
-    pub fn new(id: TxnID, storage: &'a dyn VersionManager) -> Self {
+    pub fn new(id: TxnID, storage: &'a dyn VersionedStore) -> Self {
         Self {
             id,
             storage,
