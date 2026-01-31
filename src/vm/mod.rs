@@ -14,9 +14,10 @@ mod seq_val_priority;
 use seq_val_priority::SequentialValidationPriorityVM;
 
 use crate::statedb::StateDBType;
+use crate::storage::CacheStore;
 use crate::txn::TxnError;
 use crate::version_store::VersionStoreError;
-use crate::{Block, Key, TxnID};
+use crate::{Block, Key, Storage, TxnID};
 
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -31,17 +32,23 @@ pub enum VMType {
 }
 
 impl VMType {
-    pub fn new(&self, statedb_type: StateDBType, cache_size: usize) -> Box<dyn VM> {
+    pub fn new(
+        &self,
+        statedb_type: StateDBType,
+        cache_size: usize,
+        storage: Box<dyn Storage>,
+    ) -> Box<dyn VM> {
+        let cache_store = CacheStore::new(cache_size, storage);
         match self {
-            VMType::Sequential => Box::new(SequentialVM::new(statedb_type, cache_size)),
+            VMType::Sequential => Box::new(SequentialVM::new(statedb_type, cache_store)),
             VMType::SequentialValidation => {
-                Box::new(SequentialValidationVM::new(statedb_type, cache_size))
+                Box::new(SequentialValidationVM::new(statedb_type, cache_store))
             }
             VMType::SequentialValidationPriority => Box::new(SequentialValidationPriorityVM::new(
                 statedb_type,
-                cache_size,
+                cache_store,
             )),
-            VMType::BlockSTM => Box::new(BlockSTMVM::new(statedb_type, cache_size)),
+            VMType::BlockSTM => Box::new(BlockSTMVM::new(statedb_type, cache_store)),
         }
     }
 }

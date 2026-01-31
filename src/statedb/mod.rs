@@ -152,10 +152,7 @@ pub(crate) trait StateDB: StateDBBase {
         &mut self,
         _address: AccountAddress,
         _state_key: StateKey,
-    ) -> Result<Value, StateDBError> {
-        // For simplicity, we assume committed state is always zero in this mock implementation.
-        Ok(Value::zero())
-    }
+    ) -> Result<Value, StateDBError>;
 
     fn has_self_destructed(&mut self, address: AccountAddress) -> Result<bool, StateDBError> {
         self.exist(address).map(|exist| !exist) // has_self_destructed = !exist

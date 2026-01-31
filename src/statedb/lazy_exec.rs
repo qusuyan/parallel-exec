@@ -135,4 +135,13 @@ impl<'a> StateDB for LazyExecStateDB<'a> {
             write_set: self.write_set,
         }
     }
+
+    fn get_committed_state(
+        &mut self,
+        address: AccountAddress,
+        state_key: crate::StateKey,
+    ) -> Result<Value, StateDBError> {
+        self.storage.get_committed_state(&address, &state_key)?;
+        Ok(Value::zero())
+    }
 }

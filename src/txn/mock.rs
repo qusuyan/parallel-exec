@@ -11,6 +11,7 @@ use crate::TxnID;
 use crate::statedb::{StateDBOp, StateDBOpType, StateDBType, ValidationSets};
 use crate::version_store::VersionedStore;
 
+#[derive(Debug)]
 pub struct MockTransaction {
     id: TxnID,
     exec_time: Duration,
@@ -47,7 +48,7 @@ impl Transaction for MockTransaction {
         let mut statedb = statedb_type.new(self.id, storage);
 
         // do not simulate storage access time here - the CachedStore will do it
-        let mut prev_comp_start = None;
+        let mut prev_comp_start = Duration::ZERO;
 
         for StateDBOp {
             account,
@@ -58,11 +59,8 @@ impl Transaction for MockTransaction {
         {
             // busy spin until previous op's compute time is reached
             let emu_start = Instant::now();
-            let prev_compute = match prev_comp_start {
-                Some(prev_comp_start) => *start_time - prev_comp_start,
-                None => Duration::ZERO,
-            };
-            prev_comp_start = Some(*start_time + *storage_time);
+            let prev_compute = *start_time - prev_comp_start;
+            prev_comp_start = *start_time + *storage_time;
             while Instant::now() < emu_start + prev_compute {}
 
             match op_type {
@@ -122,9 +120,10 @@ impl Transaction for MockTransaction {
 
         // busy spin for the rest of the execution time
         let end = Instant::now()
-            + match prev_comp_start {
-                Some(prev_comp_start) => self.exec_time - prev_comp_start,
-                None => Duration::ZERO,
+            + if self.exec_time > prev_comp_start {
+                self.exec_time - prev_comp_start
+            } else {
+                Duration::ZERO
             };
         while Instant::now() < end {}
 

@@ -8,6 +8,9 @@ pub use statedb::{StateDBOp, StateDBOpType, StateDBType};
 
 mod version_store;
 
+mod storage;
+pub use storage::{MockStore, Storage, StorageKey};
+
 mod vm;
 pub use vm::{VM, VMType};
 

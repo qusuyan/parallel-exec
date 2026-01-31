@@ -3,7 +3,7 @@
  */
 use super::{StateDB, StateDBBase, StateDBError, ValidationSets, Value, Version};
 use crate::version_store::VersionedStore;
-use crate::{Key, TxnID, WriteOp};
+use crate::{AccountAddress, Key, StateKey, TxnID, WriteOp};
 
 use std::collections::HashMap;
 
@@ -63,5 +63,14 @@ impl<'a> StateDB for BasicStateDB<'a> {
             read_set: self.read_set,
             write_set: self.write_set,
         }
+    }
+
+    fn get_committed_state(
+        &mut self,
+        address: AccountAddress,
+        state_key: StateKey,
+    ) -> Result<Value, StateDBError> {
+        self.storage.get_committed_state(&address, &state_key)?;
+        Ok(Value::zero())
     }
 }

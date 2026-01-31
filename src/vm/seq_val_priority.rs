@@ -4,6 +4,7 @@
  */
 use super::{VM, VMError};
 use crate::statedb::StateDBType;
+use crate::storage::CacheStore;
 use crate::vm::seq_val::SequentialValidationVM;
 use crate::{Block, Key, TxnID};
 
@@ -15,9 +16,9 @@ pub struct SequentialValidationPriorityVM {
 }
 
 impl SequentialValidationPriorityVM {
-    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
+    pub fn new(statedb_type: StateDBType, storage: CacheStore) -> Self {
         Self {
-            inner: SequentialValidationVM::new(statedb_type, cache_size),
+            inner: SequentialValidationVM::new(statedb_type, storage),
         }
     }
 }

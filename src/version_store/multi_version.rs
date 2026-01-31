@@ -1,10 +1,10 @@
-use super::storage::CacheStore;
 /**
  * Multi-Version Storage implementation based on Block-STM.
  * The nonce corresponds to incarnation number, which is unique per transaction attempt.
  */
 use super::{VersionStoreError, VersionedStore};
-use crate::{Key, TxnID, Version, WriteOp};
+use crate::storage::CacheStore;
+use crate::{Field, Key, StorageKey, TxnID, Version, WriteOp};
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,9 +24,9 @@ pub(crate) struct MultiVersionStorage {
 }
 
 impl MultiVersionStorage {
-    pub(crate) fn new(cache_size: usize) -> Self {
+    pub(crate) fn new(storage: CacheStore) -> Self {
         Self {
-            storage: CacheStore::new(cache_size),
+            storage,
             version_manager: DashMap::new(),
             last_write_set: DashMap::new(),
             last_read_set: DashMap::new(),
@@ -144,7 +144,13 @@ impl VersionedStore for MultiVersionStorage {
                 Err(VersionStoreError::ReadToBeModified(prev_tid))
             }
             None => {
-                self.storage.read(key);
+                let storage_key = match key.field {
+                    Field::State(ref state_key) => {
+                        StorageKey::State(key.address.clone(), state_key.clone())
+                    }
+                    _ => StorageKey::Account(key.address.clone()),
+                };
+                self.storage.get(&storage_key);
                 Ok(None)
             }
         }
@@ -167,5 +173,15 @@ impl VersionedStore for MultiVersionStorage {
             })
             .collect();
         Ok(finalized_map)
+    }
+
+    fn get_committed_state(
+        &self,
+        account: &crate::AccountAddress,
+        state_key: &crate::StateKey,
+    ) -> Result<(), VersionStoreError> {
+        let storage_key = StorageKey::State(account.clone(), state_key.clone());
+        self.storage.get(&storage_key);
+        Ok(())
     }
 }

@@ -5,6 +5,7 @@
  */
 use super::{VM, VMError};
 use crate::statedb::{StateDBError, StateDBType, ValidationSets};
+use crate::storage::CacheStore;
 use crate::txn::TxnError;
 use crate::version_store::{SingleVersionStorage, VersionedStore};
 use crate::{Block, Key, Transaction, TxnID, WriteOp};
@@ -103,10 +104,10 @@ pub struct SequentialValidationVM {
 }
 
 impl SequentialValidationVM {
-    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
+    pub fn new(statedb_type: StateDBType, storage: CacheStore) -> Self {
         Self {
             statedb_type,
-            storage: Arc::new(SingleVersionStorage::new(cache_size)),
+            storage: Arc::new(SingleVersionStorage::new(storage)),
         }
     }
 

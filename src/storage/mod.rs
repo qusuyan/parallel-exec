@@ -1,15 +1,37 @@
-use std::num::NonZeroUsize;
+mod mock;
+pub use mock::MockStore;
+use primitive_types::U256;
+
+use crate::AccountAddress;
 
 use dashmap::DashMap;
 use lru::LruCache;
+use std::num::NonZeroUsize;
 use tokio::sync::Mutex;
 
-use crate::Key;
+pub trait Storage: Sync + Send {
+    fn get(&self, key: &StorageKey);
+}
 
 #[derive(Clone, Copy, Debug)]
 enum CacheEntry {
     Ready,
     Pending,
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+pub enum StorageKey {
+    Account(AccountAddress),
+    State(AccountAddress, U256),
+}
+
+impl std::fmt::LowerHex for StorageKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StorageKey::Account(addr) => write!(f, "{:x}", addr),
+            StorageKey::State(addr, state_key) => write!(f, "{:x}-{:x}", addr, state_key),
+        }
+    }
 }
 
 /// An in‑memory storage emulator with a small async cache and in‑flight
@@ -20,25 +42,27 @@ enum CacheEntry {
 /// - Cache miss while another task is loading the same key: wait for it.
 /// - Cache miss with no ongoing load: emulate storage latency, load, then cache.
 pub struct CacheStore {
-    cache: DashMap<Key, CacheEntry>,
-    evict_queue: Mutex<LruCache<Key, ()>>,
+    cache: DashMap<StorageKey, CacheEntry>,
+    evict_queue: Mutex<LruCache<StorageKey, ()>>,
+    storage: Box<dyn Storage>,
 }
 
 impl CacheStore {
     /// Create a storage emulator with an LRU cache of the given capacity
     /// (must be > 0).
-    pub fn new(cache_capacity: usize) -> Self {
+    pub fn new(cache_capacity: usize, storage: Box<dyn Storage>) -> Self {
         let cap =
             NonZeroUsize::new(cache_capacity).expect("cache capacity must be greater than zero");
         Self {
             cache: DashMap::new(),
             evict_queue: Mutex::new(LruCache::new(cap)),
+            storage,
         }
     }
 
-    /// Read a value. Supply a loader that produces the value after the
+    /// Get a value. Supply a loader that produces the value after the
     /// (emulated) storage latency.
-    pub fn read(&self, key: &Key) {
+    pub fn get(&self, key: &StorageKey) {
         // check cache entry first
         let mut is_loader = false;
         let mut cache_entry = self.cache.entry(key.clone()).or_insert_with(|| {
@@ -54,7 +78,8 @@ impl CacheStore {
             }
             CacheEntry::Pending => {
                 if is_loader {
-                    // TODO: emulate storage latency here
+                    // delegate storage access to the underlying storage
+                    self.storage.get(&key);
 
                     // update LRU
                     let evict_key = {
@@ -78,7 +103,7 @@ impl CacheStore {
                 } else {
                     // we are a waiter, spin until ready
                     loop {
-                        if let Some(entry) = self.cache.get(key) {
+                        if let Some(entry) = self.cache.get(&key) {
                             if matches!(*entry, CacheEntry::Ready) {
                                 break;
                             }

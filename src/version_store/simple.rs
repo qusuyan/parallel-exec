@@ -1,9 +1,9 @@
-use super::storage::CacheStore;
 /**
  * A simple storage implementation based on DashMap.
  */
 use super::{VersionStoreError, VersionedStore};
-use crate::{Key, TxnID, Version, WriteOp};
+use crate::storage::CacheStore;
+use crate::{AccountAddress, Field, Key, StateKey, StorageKey, TxnID, Version, WriteOp};
 
 use std::collections::HashMap;
 
@@ -15,10 +15,10 @@ pub(crate) struct SingleVersionStorage {
 }
 
 impl SingleVersionStorage {
-    pub(crate) fn new(cache_size: usize) -> Self {
+    pub(crate) fn new(storage: CacheStore) -> Self {
         Self {
             versions: DashMap::new(),
-            storage: CacheStore::new(cache_size),
+            storage,
         }
     }
 
@@ -43,12 +43,28 @@ impl VersionedStore for SingleVersionStorage {
     fn get(&self, _: TxnID, key: &Key) -> Result<Version, VersionStoreError> {
         let version = self.versions.get(key).map(|e| *e);
         // insert storage access latency if not cached
-        self.storage.read(key);
+        let storage_key = match key.field {
+            Field::State(ref state_key) => {
+                StorageKey::State(key.address.clone(), state_key.clone())
+            }
+            _ => StorageKey::Account(key.address.clone()),
+        };
+        self.storage.get(&storage_key);
         Ok(version)
     }
 
     fn finalize(&mut self) -> Result<HashMap<Key, TxnID>, VersionStoreError> {
         let versions = std::mem::take(&mut self.versions);
         Ok(versions.into_iter().collect())
+    }
+
+    fn get_committed_state(
+        &self,
+        account: &AccountAddress,
+        state_key: &StateKey,
+    ) -> Result<(), VersionStoreError> {
+        let storage_key = StorageKey::State(account.clone(), state_key.clone());
+        self.storage.get(&storage_key);
+        Ok(())
     }
 }

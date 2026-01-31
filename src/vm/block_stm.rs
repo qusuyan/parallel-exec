@@ -1,5 +1,6 @@
 use super::{VM, VMError};
 use crate::statedb::{StateDBError, ValidationSets};
+use crate::storage::CacheStore;
 use crate::txn::TxnError;
 use crate::version_store::{MultiVersionStorage, VersionStoreError, VersionedStore};
 use crate::{Block, Key, StateDBType, Transaction, TxnID};
@@ -324,9 +325,9 @@ pub struct BlockSTMVM {
 }
 
 impl BlockSTMVM {
-    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
+    pub fn new(statedb_type: StateDBType, storage: CacheStore) -> Self {
         Self {
-            storage: Arc::new(MultiVersionStorage::new(cache_size)),
+            storage: Arc::new(MultiVersionStorage::new(storage)),
             statedb_type,
         }
     }

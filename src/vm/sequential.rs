@@ -3,6 +3,7 @@
  */
 use super::{VM, VMError};
 use crate::statedb::StateDBType;
+use crate::storage::CacheStore;
 use crate::version_store::{SingleVersionStorage, VersionedStore};
 use crate::{Block, Key, TxnID};
 
@@ -14,10 +15,10 @@ pub struct SequentialVM {
 }
 
 impl SequentialVM {
-    pub fn new(statedb_type: StateDBType, cache_size: usize) -> Self {
+    pub fn new(statedb_type: StateDBType, storage: CacheStore) -> Self {
         Self {
             statedb_type,
-            storage: SingleVersionStorage::new(cache_size),
+            storage: SingleVersionStorage::new(storage),
         }
     }
 }
