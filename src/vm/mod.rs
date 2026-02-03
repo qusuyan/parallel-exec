@@ -17,7 +17,7 @@ use crate::statedb::StateDBType;
 use crate::storage::CacheStore;
 use crate::txn::TxnError;
 use crate::version_store::VersionStoreError;
-use crate::{Block, Key, Storage, TxnID};
+use crate::{Block, Key, Storage, TxnID, Value};
 
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -77,5 +77,5 @@ impl From<VersionStoreError> for VMError {
 pub trait VM {
     // use mut to avoid currently processing multiple blocks
     async fn process(&mut self, block: Block) -> Result<(), VMError>;
-    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError>;
+    async fn commit(&mut self) -> Result<HashMap<Key, (TxnID, Value)>, VMError>;
 }

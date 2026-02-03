@@ -3,7 +3,7 @@ use crate::statedb::{StateDBError, ValidationSets};
 use crate::storage::CacheStore;
 use crate::txn::TxnError;
 use crate::version_store::{MultiVersionStorage, VersionStoreError, VersionedStore};
-use crate::{Block, Key, StateDBType, Transaction, TxnID};
+use crate::{Block, Key, StateDBType, Transaction, TxnID, Value};
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -297,23 +297,21 @@ impl Scheduler {
         false
     }
 
-    fn finish_validation(&self, txn_id: TxnID, aborted: bool) -> Option<Task> {
-        if aborted {
-            // mark the txn ready for re-execution
-            let mut guard = loop {
-                if let Ok(guard) = self.txn_info[txn_id].status.try_lock() {
-                    break guard;
-                }
-            };
-            let (ref mut inc, ref mut status, _) = *guard;
-            *inc += 1;
-            *status = TxnStatus::Ready;
-            self.decrease_validation_idx(txn_id + 1); // TODO: why is this line needed?
-            if self.execution_idx.load(Ordering::Relaxed) > txn_id {
-                return self
-                    .try_exec_incarnate_unsafe(guard)
-                    .map(|incarnate| Task::Execute { txn_id, incarnate });
+    fn finish_validation_abort(&self, txn_id: TxnID, prev_incarnation: u32) -> Option<Task> {
+        // mark the txn ready for re-execution
+        let mut guard = loop {
+            if let Ok(guard) = self.txn_info[txn_id].status.try_lock() {
+                break guard;
             }
+        };
+        let (ref mut inc, ref mut status, _) = *guard;
+        *inc = std::cmp::max(*inc, prev_incarnation) + 1;
+        *status = TxnStatus::Ready;
+        self.decrease_validation_idx(txn_id + 1); // TODO: why is this line needed?
+        if self.execution_idx.load(Ordering::Relaxed) > txn_id {
+            return self
+                .try_exec_incarnate_unsafe(guard)
+                .map(|incarnate| Task::Execute { txn_id, incarnate });
         }
         None
     }
@@ -360,7 +358,7 @@ impl VM for BlockSTMVM {
         Ok(())
     }
 
-    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
+    async fn commit(&mut self) -> Result<HashMap<Key, (TxnID, Value)>, VMError> {
         let storage = Arc::get_mut(&mut self.storage).ok_or(VMError::CommitWhileProcessing)?;
         let finalized_map = storage.finalize()?;
         Ok(finalized_map)
@@ -418,16 +416,26 @@ impl BlockSTMVM {
                             // we read a value that is later written by a previous txn - abort and retry
                             next_task = Some(Task::Execute { txn_id, incarnate });
                         }
+                        Err(TxnError::StateDBError(StateDBError::StorageError(
+                            VersionStoreError::IncrementNone,
+                        ))) => {
+                            unreachable!()
+                        }
+                        Err(_) => {
+                            // txn is not recoverable - get the read set for valiation
+                            todo!()
+                        }
                     }
                 }
                 Task::Validate { txn_id, incarnate } => {
                     let valid = mv_memory.validate_read_set(txn_id);
                     let aborted = !valid && sched.try_validation_abort(txn_id, incarnate);
-                    if aborted {
-                        mv_memory.convert_writes_to_estimates(txn_id);
+                    next_task = if aborted {
+                        let prev_incarnation = mv_memory.convert_writes_to_estimates(txn_id);
+                        sched.finish_validation_abort(txn_id, prev_incarnation)
+                    } else {
+                        None
                     }
-                    // finish validation
-                    next_task = sched.finish_validation(txn_id, aborted);
                 }
             }
 

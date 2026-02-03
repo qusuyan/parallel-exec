@@ -6,7 +6,7 @@ use super::{VM, VMError};
 use crate::statedb::StateDBType;
 use crate::storage::CacheStore;
 use crate::vm::seq_val::SequentialValidationVM;
-use crate::{Block, Key, TxnID};
+use crate::{Block, Key, TxnID, Value};
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, VecDeque};
@@ -59,7 +59,7 @@ impl VM for SequentialValidationPriorityVM {
         self.inner.process_with_exec_queue(exec_queue).await
     }
 
-    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
+    async fn commit(&mut self) -> Result<HashMap<Key, (TxnID, Value)>, VMError> {
         self.inner.commit().await
     }
 }

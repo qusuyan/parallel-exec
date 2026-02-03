@@ -29,34 +29,48 @@ impl<'a> LazyExecStateDB<'a> {
 }
 
 impl<'a> StateDBBase for LazyExecStateDB<'a> {
-    fn write(&mut self, key: Key, write_op: WriteOp) -> Result<(), StateDBError> {
-        self.write_set.insert(key, write_op);
+    fn write(
+        &mut self,
+        address: AccountAddress,
+        field: Field,
+        write_op: WriteOp,
+    ) -> Result<(), StateDBError> {
+        self.write_set.insert(Key { address, field }, write_op);
         Ok(())
     }
 
-    fn read(&mut self, key: Key) -> Result<Value, StateDBError> {
+    fn read(
+        &mut self,
+        address: AccountAddress,
+        field: Field,
+    ) -> Result<Option<Value>, StateDBError> {
+        let key = Key { address, field };
         match self.write_set.get_mut(&key) {
             Some(write_op) => match write_op {
                 WriteOp::Set(val) => {
-                    return Ok(*val); // read your own write
+                    return Ok(Some(*val)); // read your own write
                 }
-                WriteOp::Inc(inc, _) => {
-                    // get value from statedb (later) and apply increment/decrement
-                    *write_op = WriteOp::Set(*inc);
+                WriteOp::Inc(..) => {
+                    let (Some(orig_val), orig_ver) = self.storage.get(self.id, &key)? else {
+                        return Err(StateDBError::ReadUndefined);
+                    };
+                    self.read_set.insert(key.clone(), orig_ver);
+                    let new_val = write_op.apply_to(&orig_val);
+                    *write_op = WriteOp::Set(new_val);
                 }
             },
             None => {}
         }
 
-        // read from cached read set
-        if self.read_set.contains_key(&key) {
-            return Ok(Value::one());
+        // read from storage
+        let (val, ver) = self.storage.get(self.id, &key)?;
+        if let Some(orig_v) = self.read_set.insert(key, ver) {
+            if orig_v != ver {
+                return Err(StateDBError::ReadInconsistentVersions);
+            }
         }
 
-        // read from storage
-        let version = self.storage.get(self.id, &key)?;
-        self.read_set.insert(key, version);
-        Ok(Value::one())
+        Ok(val)
     }
 }
 
@@ -67,26 +81,9 @@ impl<'a> StateDB for LazyExecStateDB<'a> {
             field: Field::Balance,
         };
         match self.write_set.entry(key) {
-            Entry::Occupied(mut entry) => match entry.get_mut() {
-                WriteOp::Set(current_val) => {
-                    *current_val += amount;
-                }
-                WriteOp::Inc(inc, sign) => {
-                    if *sign {
-                        // adding more balance
-                        *inc += amount;
-                    } else {
-                        if *inc > amount {
-                            // subtracted more balance than adding
-                            *inc -= amount;
-                        } else {
-                            // subtracted less balance than adding
-                            *sign = true;
-                            *inc = amount - *inc;
-                        }
-                    }
-                }
-            },
+            Entry::Occupied(mut entry) => {
+                entry.insert(*entry.get() - WriteOp::Inc(amount, true));
+            }
             Entry::Vacant(entry) => {
                 entry.insert(WriteOp::Inc(amount, true));
             }
@@ -104,24 +101,9 @@ impl<'a> StateDB for LazyExecStateDB<'a> {
             field: Field::Balance,
         };
         match self.write_set.entry(key) {
-            Entry::Occupied(mut entry) => match entry.get_mut() {
-                WriteOp::Set(current_val) => *current_val = current_val.saturating_sub(amount),
-                WriteOp::Inc(inc, sign) => {
-                    if !*sign {
-                        // subtracting more balance
-                        *inc += amount;
-                    } else {
-                        if *inc > amount {
-                            // added more balance than subtracting
-                            *inc -= amount;
-                        } else {
-                            // added less balance than subtracting
-                            *sign = false;
-                            *inc = amount - *inc;
-                        }
-                    }
-                }
-            },
+            Entry::Occupied(mut entry) => {
+                entry.insert(*entry.get() - WriteOp::Inc(amount, false));
+            }
             Entry::Vacant(entry) => {
                 entry.insert(WriteOp::Inc(amount, false));
             }

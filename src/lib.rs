@@ -9,23 +9,25 @@ pub use statedb::{StateDBOp, StateDBOpType, StateDBType};
 mod version_store;
 
 mod storage;
-pub use storage::{MockStore, Storage, StorageKey};
+pub use storage::{MockStore, MockStoreBuilder, Storage, StorageKey, StorageKeyType};
 
 mod vm;
 pub use vm::{VM, VMType};
 
 use primitive_types::U256;
 
+pub type AccountAddress = U256;
+pub type StateKey = U256;
+
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub enum Field {
     Exist,
     Balance,
     Nonce,
+    CodeHash,
     Code,
-    State(U256),
+    State(StateKey),
 }
-pub type AccountAddress = U256;
-pub type StateKey = U256;
 
 impl PartialOrd for Field {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -46,6 +48,9 @@ impl Ord for Field {
             (Nonce, Nonce) => std::cmp::Ordering::Equal,
             (Nonce, _) => std::cmp::Ordering::Less,
             (_, Nonce) => std::cmp::Ordering::Greater,
+            (CodeHash, CodeHash) => std::cmp::Ordering::Equal,
+            (CodeHash, _) => std::cmp::Ordering::Less,
+            (_, CodeHash) => std::cmp::Ordering::Greater,
             (Code, Code) => std::cmp::Ordering::Equal,
             (Code, _) => std::cmp::Ordering::Less,
             (_, Code) => std::cmp::Ordering::Greater,

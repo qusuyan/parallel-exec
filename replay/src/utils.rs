@@ -77,9 +77,15 @@ pub(crate) fn parse_op(
             start_time,
             storage_time,
         }),
-        "GetCode" | "GetCodeHash" | "GetCodeSize" => Ok(StateDBOp {
+        "GetCode" | "GetCodeSize" => Ok(StateDBOp {
             account: U256::from_str(state_key)?,
             op_type: StateDBOpType::GetCode,
+            start_time,
+            storage_time,
+        }),
+        "GetCodeHash" => Ok(StateDBOp {
+            account: U256::from_str(state_key)?,
+            op_type: StateDBOpType::GetCodeHash,
             start_time,
             storage_time,
         }),
@@ -108,7 +114,7 @@ pub(crate) fn parse_op(
             };
             Ok(StateDBOp {
                 account: U256::from_str(account_addr)?,
-                op_type: StateDBOpType::GetState(U256::from_str(state_key)?),
+                op_type: StateDBOpType::GetCommittedState(U256::from_str(state_key)?),
                 start_time,
                 storage_time,
             })

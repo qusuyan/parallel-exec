@@ -36,6 +36,7 @@ pub enum StateDBOpType {
     GetBalance,
     GetNonce,
     GetCode,
+    GetCodeHash,
     GetState(StateKey),
     GetCommittedState(StateKey),
     HasSelfDestructed,
@@ -52,6 +53,8 @@ pub enum StateDBOpType {
 
 #[derive(Debug)]
 pub enum StateDBError {
+    ReadUndefined,
+    IncrementNone,
     ReadInconsistentVersions,
     StorageError(VersionStoreError),
 }
@@ -92,48 +95,70 @@ impl StateDBType {
 }
 
 pub(crate) trait StateDBBase {
-    fn write(&mut self, key: Key, write_op: WriteOp) -> Result<(), StateDBError>;
-    fn read(&mut self, key: Key) -> Result<Value, StateDBError>;
+    fn write(
+        &mut self,
+        account: AccountAddress,
+        field: Field,
+        write_op: WriteOp,
+    ) -> Result<(), StateDBError>;
+    fn read(
+        &mut self,
+        account: AccountAddress,
+        field: Field,
+    ) -> Result<Option<Value>, StateDBError>;
 }
 
 pub(crate) trait StateDB: StateDBBase {
     fn exist(&mut self, address: AccountAddress) -> Result<bool, StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Exist,
-        };
-        self.read(key).map(|val| val == Value::one())
+        self.read(address, Field::Exist).map(|val| val.is_some())
     }
 
     fn empty(&mut self, address: AccountAddress) -> Result<bool, StateDBError> {
-        let balance = self.get_balance(address)?;
-        let nonce = self.get_nonce(address)?;
-        let code = self.get_code(address)?;
+        if !self.exist(address)? {
+            return Ok(true);
+        }
+        let balance = self
+            .read(address, Field::Balance)?
+            .ok_or(StateDBError::ReadUndefined)?;
+        let nonce = self
+            .read(address, Field::Nonce)?
+            .ok_or(StateDBError::ReadUndefined)?;
+        let code = self
+            .read(address, Field::CodeHash)?
+            .ok_or(StateDBError::ReadUndefined)?;
         Ok(balance.is_zero() && nonce.is_zero() && code.is_zero())
     }
 
     fn get_balance(&mut self, address: AccountAddress) -> Result<Value, StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Balance,
-        };
-        self.read(key)
+        if !self.exist(address)? {
+            return Ok(Value::zero());
+        }
+        self.read(address, Field::Balance)?
+            .ok_or(StateDBError::ReadUndefined)
     }
 
     fn get_nonce(&mut self, address: AccountAddress) -> Result<Value, StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Nonce,
-        };
-        self.read(key)
+        if !self.exist(address)? {
+            return Ok(Value::zero());
+        }
+        self.read(address, Field::Nonce)?
+            .ok_or(StateDBError::ReadUndefined)
     }
 
     fn get_code(&mut self, address: AccountAddress) -> Result<Value, StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Code,
-        };
-        self.read(key)
+        if !self.exist(address)? {
+            return Ok(Value::zero());
+        }
+        self.read(address, Field::Code)?
+            .ok_or(StateDBError::ReadUndefined)
+    }
+
+    fn get_code_hash(&mut self, address: AccountAddress) -> Result<Value, StateDBError> {
+        if !self.exist(address)? {
+            return Ok(Value::zero());
+        }
+        self.read(address, Field::CodeHash)?
+            .ok_or(StateDBError::ReadUndefined)
     }
 
     fn get_state(
@@ -141,17 +166,17 @@ pub(crate) trait StateDB: StateDBBase {
         address: AccountAddress,
         state_key: StateKey,
     ) -> Result<Value, StateDBError> {
-        let key = Key {
-            address,
-            field: Field::State(state_key),
-        };
-        self.read(key)
+        if !self.exist(address)? {
+            return Ok(Value::zero());
+        }
+        self.read(address, Field::State(state_key))?
+            .ok_or(StateDBError::ReadUndefined)
     }
 
     fn get_committed_state(
         &mut self,
-        _address: AccountAddress,
-        _state_key: StateKey,
+        address: AccountAddress,
+        state_key: StateKey,
     ) -> Result<Value, StateDBError>;
 
     fn has_self_destructed(&mut self, address: AccountAddress) -> Result<bool, StateDBError> {
@@ -167,45 +192,43 @@ pub(crate) trait StateDB: StateDBBase {
     }
 
     fn add_balance(&mut self, address: AccountAddress, amount: U256) -> Result<(), StateDBError> {
-        self.get_balance(address)?;
-        let key = Key {
+        let orig_balance = self.get_balance(address)?;
+        self.write(
             address,
-            field: Field::Balance,
-        };
-        self.write(key, WriteOp::Set(amount))
+            Field::Balance,
+            WriteOp::Set(orig_balance.saturating_add(amount)),
+        )
     }
 
     fn sub_balance(&mut self, address: AccountAddress, amount: U256) -> Result<(), StateDBError> {
-        self.get_balance(address)?;
-        let key = Key {
+        let orig_balance = self.get_balance(address)?;
+        self.write(
             address,
-            field: Field::Balance,
-        };
-        self.write(key, WriteOp::Set(amount))
+            Field::Balance,
+            WriteOp::Set(orig_balance.saturating_sub(amount)),
+        )
     }
 
     fn set_balance(&mut self, address: AccountAddress, amount: U256) -> Result<(), StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Balance,
-        };
-        self.write(key, WriteOp::Set(amount))
+        if !self.exist(address)? {
+            return Ok(());
+        }
+        self.write(address, Field::Balance, WriteOp::Set(amount))
     }
 
-    fn set_nonce(&mut self, address: AccountAddress) -> Result<(), StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Nonce,
-        };
-        self.write(key, WriteOp::Set(Value::zero()))
+    fn set_nonce(&mut self, address: AccountAddress, nonce: Value) -> Result<(), StateDBError> {
+        if !self.exist(address)? {
+            return Ok(());
+        }
+        self.write(address, Field::Nonce, WriteOp::Set(nonce))
     }
 
-    fn set_code(&mut self, address: AccountAddress) -> Result<(), StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Code,
-        };
-        self.write(key, WriteOp::Set(Value::zero()))
+    fn set_code(&mut self, address: AccountAddress, code: Value) -> Result<(), StateDBError> {
+        if !self.exist(address)? {
+            return Ok(());
+        }
+        self.write(address, Field::Code, WriteOp::Set(code))?;
+        self.write(address, Field::CodeHash, WriteOp::Set(code))
     }
 
     fn set_state(
@@ -213,27 +236,29 @@ pub(crate) trait StateDB: StateDBBase {
         address: AccountAddress,
         state_key: StateKey,
     ) -> Result<(), StateDBError> {
-        let key = Key {
+        if !self.exist(address)? {
+            return Ok(());
+        }
+        self.write(
             address,
-            field: Field::State(state_key),
-        };
-        self.write(key, WriteOp::Set(Value::zero()))
+            Field::State(state_key),
+            WriteOp::Set(Value::zero()),
+        )
     }
 
     fn self_destruct(&mut self, address: AccountAddress) -> Result<(), StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Exist,
-        };
-        self.write(key, WriteOp::Set(Value::zero()))
+        self.write(address, Field::Exist, WriteOp::Set(Value::zero()))
     }
 
     fn create_account(&mut self, address: AccountAddress) -> Result<(), StateDBError> {
-        let key = Key {
-            address,
-            field: Field::Exist,
-        };
-        self.write(key, WriteOp::Set(Value::one()))
+        if self.exist(address)? {
+            return Ok(());
+        }
+        self.write(address, Field::Exist, WriteOp::Set(Value::one()))?;
+        self.write(address, Field::Balance, WriteOp::Set(Value::zero()))?;
+        self.write(address, Field::Nonce, WriteOp::Set(Value::zero()))?;
+        // self.write(address, Field::CodeHash, WriteOp::Set(Value::zero()))?;
+        Ok(())
     }
 
     fn into_validation_sets(self: Box<Self>) -> ValidationSets;

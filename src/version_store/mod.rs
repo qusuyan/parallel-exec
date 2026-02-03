@@ -8,21 +8,22 @@ pub(crate) use simple::SingleVersionStorage;
 mod multi_version;
 pub(crate) use multi_version::MultiVersionStorage;
 
-use crate::{AccountAddress, Key, StateKey, TxnID, Version};
+use crate::{AccountAddress, Key, StateKey, TxnID, Value, Version};
 
 use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum VersionStoreError {
     ReadToBeModified(TxnID),
+    IncrementNone,
 }
 
 pub trait VersionedStore: Sync + Send {
-    fn get(&self, tid: TxnID, key: &Key) -> Result<Version, VersionStoreError>;
+    fn get(&self, tid: TxnID, key: &Key) -> Result<(Option<Value>, Version), VersionStoreError>;
     fn get_committed_state(
         &self,
         account: &AccountAddress,
         state_key: &StateKey,
-    ) -> Result<(), VersionStoreError>;
-    fn finalize(&mut self) -> Result<HashMap<Key, TxnID>, VersionStoreError>;
+    ) -> Result<Option<Value>, VersionStoreError>;
+    fn finalize(&mut self) -> Result<HashMap<Key, (TxnID, Value)>, VersionStoreError>;
 }

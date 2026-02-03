@@ -8,7 +8,7 @@ use crate::statedb::{StateDBError, StateDBType, ValidationSets};
 use crate::storage::CacheStore;
 use crate::txn::TxnError;
 use crate::version_store::{SingleVersionStorage, VersionedStore};
-use crate::{Block, Key, Transaction, TxnID, WriteOp};
+use crate::{Block, Key, Transaction, TxnID, Value, WriteOp};
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -153,7 +153,7 @@ impl VM for SequentialValidationVM {
         self.process_with_exec_queue(exec_queue).await
     }
 
-    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
+    async fn commit(&mut self) -> Result<HashMap<Key, (TxnID, Value)>, VMError> {
         let storage = Arc::get_mut(&mut self.storage).ok_or(VMError::CommitWhileProcessing)?;
         let finalized_map = storage.finalize()?;
         Ok(finalized_map)
@@ -221,7 +221,7 @@ impl SequentialValidationVM {
                         .collect();
 
                     // commit the write set
-                    storage.commit(txn_id, write_set);
+                    storage.commit(txn_id, write_set)?;
                     log::debug!("handler {id}: committed txn {:x}", txn_id);
 
                     // advance the next_to_validate pointer

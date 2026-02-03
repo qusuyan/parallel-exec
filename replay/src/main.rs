@@ -2,7 +2,7 @@ mod utils;
 use utils::{GENESIS_ACCOUNT, parse_lat_csv, parse_op};
 
 use parallel_exec::{
-    Block, MockStore, MockTransaction, StateDBOpType, StateDBType, Transaction, VMType,
+    Block, MockStoreBuilder, MockTransaction, StateDBOpType, StateDBType, Transaction, VMType,
 };
 
 use std::fs::File;
@@ -99,7 +99,7 @@ fn main() {
     out_writer.write_all(b"block_id,execution_time\n").unwrap();
 
     let mut cur_block = Vec::new();
-    let mut cur_store = Box::new(MockStore::new());
+    let mut cur_store_builder = MockStoreBuilder::new();
     let mut cur_txn: Option<(String, String)> = None;
     let mut cur_ops = Vec::new();
     while let Some(line) = op_lines.next() {
@@ -128,11 +128,11 @@ fn main() {
                 }
 
                 if cur_blk_id != blk_id {
+                    let txns = std::mem::take(&mut cur_block);
+                    let mock_store_builder = std::mem::take(&mut cur_store_builder);
+
                     // Process the completed block
-                    log::info!(
-                        "Executing block {cur_blk_id}: {} transactions",
-                        cur_block.len()
-                    );
+                    log::info!("Executing block {cur_blk_id}: {} transactions", txns.len());
 
                     let blk_id_parsed = u64::from_str(cur_blk_id)
                         .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
@@ -141,9 +141,9 @@ fn main() {
                     }
                     let new_block = Block {
                         id: blk_id_parsed,
-                        transactions: std::mem::take(&mut cur_block),
+                        transactions: txns,
                     };
-                    let mock_store = std::mem::take(&mut cur_store);
+                    let mock_store = Box::new(mock_store_builder.build());
 
                     let mut vm = args
                         .vm_type
@@ -176,7 +176,7 @@ fn main() {
         if !(operation.account == GENESIS_ACCOUNT
             && matches!(operation.op_type, StateDBOpType::AddBalance(_)))
         {
-            cur_store.record_op(&operation);
+            cur_store_builder.record_op(&operation);
             cur_ops.push(operation);
         }
     }
@@ -206,7 +206,8 @@ fn main() {
             id: blk_id_parsed,
             transactions: std::mem::take(&mut cur_block),
         };
-        let mock_store = std::mem::take(&mut cur_store);
+        let mock_store_builder = std::mem::take(&mut cur_store_builder);
+        let mock_store = Box::new(mock_store_builder.build());
 
         let mut vm = args
             .vm_type

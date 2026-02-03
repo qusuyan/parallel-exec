@@ -5,7 +5,7 @@ use super::{VM, VMError};
 use crate::statedb::StateDBType;
 use crate::storage::CacheStore;
 use crate::version_store::{SingleVersionStorage, VersionedStore};
-use crate::{Block, Key, TxnID};
+use crate::{Block, Key, TxnID, Value};
 
 use std::collections::HashMap;
 
@@ -31,13 +31,13 @@ impl VM for SequentialVM {
                 .execute(&self.storage, self.statedb_type.clone())
                 .await
                 .map_err(|error| -> VMError { VMError::TxnError { txn_id: i, error } })?;
-            self.storage.commit(i, result.write_set);
+            self.storage.commit(i, result.write_set)?;
             log::debug!("Committed txn {:x}", i);
         }
         Ok(())
     }
 
-    async fn commit(&mut self) -> Result<HashMap<Key, TxnID>, VMError> {
+    async fn commit(&mut self) -> Result<HashMap<Key, (TxnID, Value)>, VMError> {
         Ok(self.storage.finalize()?)
     }
 }
