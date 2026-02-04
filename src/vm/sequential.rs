@@ -28,7 +28,7 @@ impl VM for SequentialVM {
     async fn process(&mut self, block: Block) -> Result<(), VMError> {
         for (i, txn) in block.transactions.into_iter().enumerate() {
             let result = txn
-                .execute(&self.storage, self.statedb_type.clone())
+                .execute(i, &self.storage, self.statedb_type.clone())
                 .await
                 .map_err(|error| -> VMError { VMError::TxnError { txn_id: i, error } })?;
             self.storage.commit(i, result.write_set)?;

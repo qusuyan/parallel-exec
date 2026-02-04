@@ -128,7 +128,6 @@ fn generate_random_statedb_op(
 
 fn generate_random_txn(
     rng: &mut StdRng,
-    txn_id: usize,
     txn_size: usize,
     accounts: &Vec<AccountAddress>,
     cache: &mut HashSet<StorageKey>,
@@ -144,7 +143,7 @@ fn generate_random_txn(
         ops.push(op);
     }
     let exec_time = cur_time + Duration::from_micros(rng.gen_range(0u64..1000u64));
-    let txn = MockTransaction::new(txn_id, exec_time, ops);
+    let txn = MockTransaction::new(exec_time, ops);
 
     (
         Arc::new(txn) as Arc<dyn Transaction + Send + Sync>,
@@ -173,7 +172,7 @@ fn generate_random_block(blk_id: u64) -> (Block, MockStore, Duration) {
     let num_txn = 1;
     let mut transactions = Vec::with_capacity(num_txn);
 
-    for txn_id in 0..num_txn {
+    for _ in 0..num_txn {
         let txn_size = rng.gen_range(30usize..1000);
         let unique_accounts = rng.gen_range(2usize..20);
         let accounts = (0..unique_accounts)
@@ -182,7 +181,6 @@ fn generate_random_block(blk_id: u64) -> (Block, MockStore, Duration) {
 
         let (txn, txn_exec_time) = generate_random_txn(
             &mut rng,
-            txn_id,
             txn_size,
             &accounts,
             &mut cache,
@@ -197,6 +195,80 @@ fn generate_random_block(blk_id: u64) -> (Block, MockStore, Duration) {
         transactions,
     };
     (block, mock_store_builder.build(), exec_time)
+}
+
+#[test]
+fn test_block_stm() {
+    for blk_id in 0..10 {
+        let (block, mock_store, _) = generate_random_block(blk_id);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut linear_vm =
+                VMType::Sequential.new(StateDBType::Basic, 0x1000000, Box::new(mock_store.clone()));
+            linear_vm.process(block.clone()).await.unwrap();
+            let linear_vm_result = linear_vm.commit().await.unwrap();
+            let mut block_stm_vm =
+                VMType::BlockSTM.new(StateDBType::Basic, 0x1000000, Box::new(mock_store.clone()));
+            block_stm_vm.process(block).await.unwrap();
+            let block_stm_vm_result = block_stm_vm.commit().await.unwrap();
+            assert_eq!(linear_vm_result, block_stm_vm_result);
+        });
+    }
+}
+
+#[test]
+fn test_sequential_validation_vm() {
+    for blk_id in 0..10 {
+        let (block, mock_store, _) = generate_random_block(blk_id);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut linear_vm =
+                VMType::Sequential.new(StateDBType::Basic, 0x1000000, Box::new(mock_store.clone()));
+            linear_vm.process(block.clone()).await.unwrap();
+            let linear_vm_result = linear_vm.commit().await.unwrap();
+            let mut seq_val_vm = VMType::SequentialValidation.new(
+                StateDBType::Basic,
+                0x1000000,
+                Box::new(mock_store.clone()),
+            );
+            seq_val_vm.process(block).await.unwrap();
+            let seq_val_vm_result = seq_val_vm.commit().await.unwrap();
+            assert_eq!(linear_vm_result, seq_val_vm_result);
+        });
+    }
+}
+
+#[test]
+fn test_check_enough_balance() {
+    for blk_id in 0..10 {
+        let (block, mock_store, _) = generate_random_block(blk_id);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let mut linear_vm = VMType::SequentialValidation.new(
+                StateDBType::Basic,
+                0x1000000,
+                Box::new(mock_store.clone()),
+            );
+            linear_vm.process(block.clone()).await.unwrap();
+            let linear_vm_result = linear_vm.commit().await.unwrap();
+            let mut seq_val_vm = VMType::SequentialValidation.new(
+                StateDBType::CheckEnoughBalance,
+                0x1000000,
+                Box::new(mock_store.clone()),
+            );
+            seq_val_vm.process(block).await.unwrap();
+            let seq_val_vm_result = seq_val_vm.commit().await.unwrap();
+            assert_eq!(linear_vm_result, seq_val_vm_result);
+        });
+    }
 }
 
 #[test]
@@ -225,81 +297,6 @@ fn test_sequential_runtime_reasonable() {
                 sim_error.as_nanos()
             );
             assert!(sim_error < Duration::from_micros(500));
-        });
-    }
-}
-
-#[test]
-fn test_block_stm() {
-    for blk_id in 0..10 {
-        let (block, mock_store, _) = generate_random_block(blk_id);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            let mut linear_vm =
-                VMType::Sequential.new(StateDBType::Basic, 0x1000000, Box::new(mock_store.clone()));
-            linear_vm.process(block.clone()).await.unwrap();
-            let linear_vm_result = linear_vm.commit().await.unwrap();
-            let mut block_stm_vm =
-                VMType::BlockSTM.new(StateDBType::Basic, 0x1000000, Box::new(mock_store.clone()));
-            block_stm_vm.process(block).await.unwrap();
-            let block_stm_vm_result = block_stm_vm.commit().await.unwrap();
-            assert_eq!(linear_vm_result, block_stm_vm_result);
-        });
-    }
-}
-
-#[test]
-fn test_sequential_validation_vm() {
-    for blk_id in 0..10 {
-        let (block, mock_store, _) = generate_random_block(blk_id);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            let mut linear_vm =
-                VMType::Sequential.new(StateDBType::Basic, 0x1000000, Box::new(mock_store.clone()));
-            linear_vm.process(block.clone()).await.unwrap();
-            let linear_vm_result = linear_vm.commit().await.unwrap();
-            let mut seq_val_vm = VMType::SequentialValidation.new(
-                StateDBType::Basic,
-                0x1000000,
-                Box::new(mock_store.clone()),
-            );
-            seq_val_vm.process(block).await.unwrap();
-            let seq_val_vm_result = seq_val_vm.commit().await.unwrap();
-            assert_eq!(linear_vm_result, seq_val_vm_result);
-        });
-    }
-}
-
-#[test]
-fn test_check_enough_balance() {
-    for blk_id in 0..10 {
-        let (block, mock_store, _) = generate_random_block(blk_id);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap();
-        runtime.block_on(async {
-            let mut linear_vm = VMType::SequentialValidation.new(
-                StateDBType::Basic,
-                0x1000000,
-                Box::new(mock_store.clone()),
-            );
-            linear_vm.process(block.clone()).await.unwrap();
-            let linear_vm_result = linear_vm.commit().await.unwrap();
-            let mut seq_val_vm = VMType::SequentialValidation.new(
-                StateDBType::CheckEnoughBalance,
-                0x1000000,
-                Box::new(mock_store.clone()),
-            );
-            seq_val_vm.process(block).await.unwrap();
-            let seq_val_vm_result = seq_val_vm.commit().await.unwrap();
-            assert_eq!(linear_vm_result, seq_val_vm_result);
         });
     }
 }

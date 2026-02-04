@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{Storage, StorageKey, Value};
 
+#[derive(Clone, Debug)]
 pub struct DummyStore {
     data: HashMap<StorageKey, Value>,
 }

@@ -51,14 +51,39 @@ impl MultiVersionStorage {
                     break guard;
                 }
             };
-            // increment nonce of all increments applied by a later txn until a Set or an ESTIMATE is found
+            // find where to insert the new version entry
+            let mut exists = false;
             let mut insert_idx = versions_mut.len();
-            for (idx, (other_tid, storage_entry)) in versions_mut.iter_mut().enumerate() {
+            for (idx, (other_tid, _)) in versions_mut.iter_mut().enumerate() {
                 if *other_tid < tid {
                     continue;
-                }
-                if idx < insert_idx {
+                } else if *other_tid == tid {
+                    // overwrite existing entry for the same txn
                     insert_idx = idx;
+                    exists = true;
+                    break;
+                } else {
+                    insert_idx = idx;
+                    break;
+                }
+            }
+            // insert new version entry in ascending order of TxnID
+            if !exists {
+                versions_mut.insert(insert_idx, (tid, entry));
+            } else {
+                let (_, version_record) = versions_mut
+                    .get_mut(insert_idx)
+                    .expect("insert_idx should be within range");
+                *version_record = entry;
+            }
+            // increment nonce of all increments applied by a later txn until a Set or an ESTIMATE is found
+            for (other_tid, storage_entry) in versions_mut.iter_mut().skip(insert_idx + 1) {
+                #[cfg(debug_assertions)]
+                {
+                    assert!(
+                        *other_tid > tid,
+                        "Txn {tid:x}: later txn {other_tid:x} expected after insert_idx {insert_idx}"
+                    );
                 }
                 if let StorageEntry::Version(nonce, WriteOp::Inc(..)) = storage_entry {
                     *nonce += 1
@@ -66,8 +91,6 @@ impl MultiVersionStorage {
                     break;
                 }
             }
-            // insert new version entry in ascending order of TxnID
-            versions_mut.insert(insert_idx, (tid, entry));
         }
     }
 
@@ -449,8 +472,31 @@ mod tests {
         assert_eq!(val, Some(Value::from(200u64)));
         assert_eq!(ver, Some(MultiVersionStorage::version(5, 0)));
 
-        // assert that the highest nonce for txn 3 is 1
+        // txn 1 re-executes again and still writes the field
+        let write_set = [(test_key.clone(), WriteOp::Inc(Value::from(45u64), true))]
+            .into_iter()
+            .collect();
+        mv_storage.record(1, 2, HashMap::new(), write_set);
+
+        // txn 0 reads base value (100)
+        let (val, ver) = mv_storage.get(0, &test_key).unwrap();
+        assert_eq!(val, Some(Value::from(100u64)));
+        assert_eq!(ver, None);
+        // txn 2 reads new value
+        let (val, ver) = mv_storage.get(2, &test_key).unwrap();
+        assert_eq!(val, Some(Value::from(145u64)));
+        assert_eq!(ver, Some(MultiVersionStorage::version(1, 2)));
+        // txn 4 reads 120
+        let (val, ver) = mv_storage.get(4, &test_key).unwrap();
+        assert_eq!(val, Some(Value::from(165u64)));
+        assert_eq!(ver, Some(MultiVersionStorage::version(3, 2)));
+        // txn 6 reads 200
+        let (val, ver) = mv_storage.get(6, &test_key).unwrap();
+        assert_eq!(val, Some(Value::from(200u64)));
+        assert_eq!(ver, Some(MultiVersionStorage::version(5, 0)));
+
+        // assert that the highest nonce for txn 3 is 2
         let prev_nonce = mv_storage.convert_writes_to_estimates(3);
-        assert_eq!(prev_nonce, 1);
+        assert_eq!(prev_nonce, 2);
     }
 }

@@ -391,7 +391,9 @@ impl BlockSTMVM {
             match current_task {
                 Task::Execute { txn_id, incarnate } => {
                     let txn = &sched.txn_info[txn_id].txn;
-                    let result = txn.execute(mv_memory.as_ref(), statedb_type.clone()).await;
+                    let result = txn
+                        .execute(txn_id, mv_memory.as_ref(), statedb_type.clone())
+                        .await;
                     match result {
                         Ok(ValidationSets {
                             read_set,
@@ -446,5 +448,258 @@ impl BlockSTMVM {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use primitive_types::U256;
+    use std::time::Duration;
+
+    use super::*;
+    use crate::storage::{CacheStore, DummyStore};
+    use crate::{
+        AccountAddress, Block, Field, MockTransaction, StateDBOp, StateDBOpType, StateKey,
+        StorageKey, StorageKeyType,
+    };
+
+    #[test]
+    fn test_parallel_exec() {
+        let txn0 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![]));
+        let txn1 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![]));
+        let txn2 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![]));
+        let txn3 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![]));
+        let txn4 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![]));
+        let storage = Box::new(DummyStore::new(HashMap::new()));
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let block1 = Block {
+            id: 0,
+            transactions: vec![txn0.clone(), txn1.clone(), txn2.clone(), txn3.clone()],
+        };
+        rt.block_on(async {
+            let mut vm =
+                BlockSTMVM::new(StateDBType::Basic, CacheStore::new(0x1000, storage.clone()));
+            let start = std::time::Instant::now();
+            vm.process(block1).await.unwrap();
+            let duration = start.elapsed();
+            println!("Total execution time: {:?}", duration);
+            assert!(duration < Duration::from_secs_f64(1.5));
+        });
+
+        let block2 = Block {
+            id: 1,
+            transactions: vec![
+                txn0.clone(),
+                txn1.clone(),
+                txn2.clone(),
+                txn3.clone(),
+                txn4.clone(),
+            ],
+        };
+        rt.block_on(async {
+            let mut vm =
+                BlockSTMVM::new(StateDBType::Basic, CacheStore::new(0x1000, storage.clone()));
+            let start = std::time::Instant::now();
+            vm.process(block2).await.unwrap();
+            let duration = start.elapsed();
+            println!("Total execution time: {:?}", duration);
+            assert!(duration > Duration::from_secs_f64(1.5));
+            assert!(duration < Duration::from_secs_f64(2.5));
+        });
+    }
+
+    #[test]
+    fn test_dependency_reexecute() {
+        let test_account = AccountAddress::from(13579u64);
+        let test_state_key = StateKey::from(24680u64);
+        let txn0 = Arc::new(MockTransaction::new(
+            Duration::from_secs(1),
+            vec![StateDBOp {
+                op_type: StateDBOpType::AddBalance(U256::from(340)),
+                account: test_account,
+                start_time: Duration::from_millis(200),
+                storage_time: Duration::from_millis(0),
+            }],
+        ));
+        let txn1 = Arc::new(MockTransaction::new(
+            Duration::from_secs(1),
+            vec![StateDBOp {
+                op_type: StateDBOpType::GetBalance,
+                account: test_account,
+                start_time: Duration::from_millis(700),
+                storage_time: Duration::from_millis(0),
+            }],
+        ));
+        let txn2 = Arc::new(MockTransaction::new(
+            Duration::from_secs(1),
+            vec![StateDBOp {
+                op_type: StateDBOpType::SetState(test_state_key),
+                account: test_account,
+                start_time: Duration::from_millis(100),
+                storage_time: Duration::from_millis(0),
+            }],
+        ));
+        let txn3 = Arc::new(MockTransaction::new(
+            Duration::from_secs(1),
+            vec![StateDBOp {
+                op_type: StateDBOpType::GetState(test_state_key),
+                account: test_account,
+                start_time: Duration::from_millis(800),
+                storage_time: Duration::from_millis(0),
+            }],
+        ));
+
+        let account_key = StorageKey {
+            account: test_account,
+            key_type: StorageKeyType::Account,
+        };
+        let state_key = StorageKey {
+            account: test_account,
+            key_type: StorageKeyType::State(test_state_key),
+        };
+        let storage = Box::new(DummyStore::new(
+            [
+                (account_key, Value::from(120u64)),
+                (state_key, Value::from(30u64)),
+            ]
+            .into_iter()
+            .collect(),
+        ));
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+        let block = Block {
+            id: 0,
+            transactions: vec![txn0.clone(), txn1.clone(), txn2.clone(), txn3.clone()],
+        };
+        rt.block_on(async {
+            let mut vm =
+                BlockSTMVM::new(StateDBType::Basic, CacheStore::new(0x1000, storage.clone()));
+            let start = std::time::Instant::now();
+            vm.process(block).await.unwrap();
+            let duration = start.elapsed();
+            println!("Total execution time: {:?}", duration);
+            let blk_write_set = vm.commit().await.unwrap();
+            assert_eq!(
+                blk_write_set,
+                [
+                    (
+                        Key {
+                            address: test_account,
+                            field: Field::Balance,
+                        },
+                        (0, Value::from(460u64)),
+                    ),
+                    (
+                        Key {
+                            address: test_account,
+                            field: Field::State(test_state_key),
+                        },
+                        (2, Value::zero()),
+                    ),
+                ]
+                .into_iter()
+                .collect()
+            );
+            assert!(duration > Duration::from_secs_f64(2.0));
+            assert!(duration < Duration::from_secs_f64(2.5));
+        });
+    }
+
+    /*
+     * This test looks like
+     * Txn 0: |----------------------|
+     * Txn 1: |---------------|      |----------------| <-- reexecute due to conflict with Txn 0
+     * Txn 2: |------------------------------|        |-------------------------------| <-- reads an estimate mark and reexecutes after Txn 1
+     */
+    #[test]
+    fn test_read_estimate() {
+        let test_account = AccountAddress::from(13579u64);
+        let txn0 = Arc::new(MockTransaction::new(
+            Duration::from_secs(1),
+            vec![StateDBOp {
+                op_type: StateDBOpType::AddBalance(U256::from(340)),
+                account: test_account,
+                start_time: Duration::from_millis(200),
+                storage_time: Duration::from_millis(0),
+            }],
+        ));
+        let txn1 = Arc::new(MockTransaction::new(
+            Duration::from_millis(600),
+            vec![
+                StateDBOp {
+                    op_type: StateDBOpType::GetBalance,
+                    account: test_account,
+                    start_time: Duration::from_millis(400),
+                    storage_time: Duration::from_millis(0),
+                },
+                StateDBOp {
+                    op_type: StateDBOpType::SubBalance(U256::from(40)),
+                    account: test_account,
+                    start_time: Duration::from_millis(500),
+                    storage_time: Duration::from_millis(0),
+                },
+            ],
+        ));
+        let txn2 = Arc::new(MockTransaction::new(
+            Duration::from_millis(1500),
+            vec![StateDBOp {
+                op_type: StateDBOpType::GetBalance,
+                account: test_account,
+                start_time: Duration::from_millis(1200),
+                storage_time: Duration::from_millis(0),
+            }],
+        ));
+
+        let account_key = StorageKey {
+            account: test_account,
+            key_type: StorageKeyType::Account,
+        };
+        let storage = Box::new(DummyStore::new(
+            [(account_key, Value::from(120u64))].into_iter().collect(),
+        ));
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+        let block = Block {
+            id: 0,
+            transactions: vec![txn0.clone(), txn1.clone(), txn2.clone()],
+        };
+        rt.block_on(async {
+            let mut vm =
+                BlockSTMVM::new(StateDBType::Basic, CacheStore::new(0x1000, storage.clone()));
+            let start = std::time::Instant::now();
+            vm.process(block).await.unwrap();
+            let duration = start.elapsed();
+            println!("Total execution time: {:?}", duration);
+            let blk_write_set = vm.commit().await.unwrap();
+            assert_eq!(
+                blk_write_set,
+                [(
+                    Key {
+                        address: test_account,
+                        field: Field::Balance,
+                    },
+                    (1, Value::from(420u64)),
+                ),]
+                .into_iter()
+                .collect()
+            );
+            assert!(duration >= Duration::from_secs_f64(3.0));
+            assert!(duration < Duration::from_secs_f64(3.2));
+        });
     }
 }

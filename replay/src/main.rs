@@ -120,7 +120,7 @@ fn main() {
 
                     let ops = std::mem::take(&mut cur_ops);
                     if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
-                        let new_txn = MockTransaction::new(txn_id_parsed, *latency, ops);
+                        let new_txn = MockTransaction::new(*latency, ops);
                         cur_block.push(Arc::new(new_txn) as Arc<dyn Transaction + Send + Sync>);
                     } else {
                         log::warn!("Latency not found for block {cur_blk_id}, txn {cur_txn_id}",);
@@ -189,8 +189,7 @@ fn main() {
             .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\"",));
 
         if let Some(latency) = lat_map.get(&(blk_id_parsed, txn_id_parsed)) {
-            let new_txn =
-                MockTransaction::new(txn_id_parsed, *latency, std::mem::take(&mut cur_ops));
+            let new_txn = MockTransaction::new(*latency, std::mem::take(&mut cur_ops));
             cur_block.push(Arc::new(new_txn) as Arc<dyn Transaction + Send + Sync>);
         } else {
             log::warn!("Latency not found for block {cur_blk_id}, txn {cur_txn_id}",);

@@ -16,42 +16,37 @@ const COMP_RESOLUTION: Duration = Duration::from_nanos(200);
 
 #[derive(Debug)]
 pub struct MockTransaction {
-    id: TxnID,
     exec_time: Duration,
     ops: Vec<StateDBOp>,
 }
 
 impl MockTransaction {
-    pub fn new(id: TxnID, exec_time: Duration, ops: Vec<StateDBOp>) -> Self {
-        Self { id, exec_time, ops }
+    pub fn new(exec_time: Duration, ops: Vec<StateDBOp>) -> Self {
+        Self { exec_time, ops }
     }
 }
 
 #[async_trait]
 impl Transaction for MockTransaction {
-    fn id(&self) -> TxnID {
-        self.id
-    }
-
     fn exec_time_est(&self) -> u128 {
         self.exec_time.as_nanos()
     }
 
     async fn execute(
         &self,
+        id: TxnID,
         storage: &dyn VersionedStore,
         statedb_type: StateDBType,
     ) -> Result<ValidationSets, TxnError> {
         log::debug!(
-            "{:?} Executing MockTransaction {:x}",
+            "{:?} Executing MockTransaction {id:x}",
             std::thread::current().id(),
-            self.id
         );
 
         // let mut start: Instant = Instant::now();
         // let mut op_count = 0;
 
-        let mut statedb = statedb_type.new(self.id, storage);
+        let mut statedb = statedb_type.new(id, storage);
 
         // do not simulate storage access time here - the CachedStore will do it
         let mut prev_comp_start = Duration::ZERO;
@@ -70,7 +65,7 @@ impl Transaction for MockTransaction {
             prev_comp_start = *start_time + *storage_time;
             while Instant::now() < end {}
 
-            // if self.id == 0 {
+            // if id == 0 {
             //     op_count += 1;
             //     let elapsed = Instant::now() - start;
             //     let (err, err_sign) = if elapsed > *start_time {
