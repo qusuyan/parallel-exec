@@ -114,7 +114,7 @@ impl Storage for MockStore {
         let start_time = Instant::now();
         let (read_duration, val) = self.entries.get(key).cloned().unwrap_or_else(|| {
             #[cfg(debug_assertions)]
-            log::warn!("Storage Key {key:x} not found in EmuStore");
+            log::warn!("Storage Key {key:x} not found in EmuStore, possibly because it was cached when executing on a previous block.");
             (Duration::ZERO, Some(Value::zero()))
         });
         let end_time = start_time + read_duration - STORAGE_RESOLUTION;

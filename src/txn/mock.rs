@@ -155,7 +155,7 @@ impl Transaction for MockTransaction {
         //     };
         //     println!(
         //         "Txn {} with {} ops took {:?}, expect {:?} (err: {}{:.1} ms)",
-        //         self.id,
+        //         id,
         //         self.ops.len(),
         //         elapsed,
         //         self.exec_time,
