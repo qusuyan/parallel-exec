@@ -77,12 +77,12 @@ impl MultiVersionStorage {
                 *version_record = entry;
             }
             // increment nonce of all increments applied by a later txn until a Set or an ESTIMATE is found
-            for (other_tid, storage_entry) in versions_mut.iter_mut().skip(insert_idx + 1) {
+            for (_other_tid, storage_entry) in versions_mut.iter_mut().skip(insert_idx + 1) {
                 #[cfg(debug_assertions)]
                 {
                     assert!(
-                        *other_tid > tid,
-                        "Txn {tid:x}: later txn {other_tid:x} expected after insert_idx {insert_idx}"
+                        *_other_tid > tid,
+                        "Txn {tid:x}: later txn {_other_tid:x} expected after insert_idx {insert_idx}"
                     );
                 }
                 if let StorageEntry::Version(nonce, WriteOp::Inc(..)) = storage_entry {
