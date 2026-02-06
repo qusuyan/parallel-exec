@@ -52,7 +52,7 @@ impl<'a> StateDBBase for LazyExecStateDB<'a> {
                 }
                 WriteOp::Inc(..) => {
                     let (Some(orig_val), orig_ver) = self.storage.get(self.id, &key)? else {
-                        return Err(StateDBError::ReadUndefined);
+                        return Err(StateDBError::IncrementNone);
                     };
                     self.read_set.insert(key.clone(), orig_ver);
                     let new_val = write_op.apply_to(&orig_val);

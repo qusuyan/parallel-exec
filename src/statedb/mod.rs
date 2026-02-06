@@ -257,7 +257,7 @@ pub(crate) trait StateDB: StateDBBase {
         self.write(address, Field::Exist, WriteOp::Set(Value::one()))?;
         self.write(address, Field::Balance, WriteOp::Set(Value::zero()))?;
         self.write(address, Field::Nonce, WriteOp::Set(Value::zero()))?;
-        // self.write(address, Field::CodeHash, WriteOp::Set(Value::zero()))?;
+        self.write(address, Field::CodeHash, WriteOp::Set(Value::zero()))?;
         Ok(())
     }
 

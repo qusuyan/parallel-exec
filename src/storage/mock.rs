@@ -78,6 +78,7 @@ impl MockStoreBuilder {
         let entries = self
             .read_times
             .into_iter()
+            .filter(|(_, dur)| !dur.is_empty())
             .map(|(key, dur)| {
                 if let Some(created_time) = self.created.get(&key.account) {
                     if key.key_type == StorageKeyType::Account {

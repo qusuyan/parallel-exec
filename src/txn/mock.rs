@@ -11,7 +11,7 @@ use crate::statedb::{StateDBOp, StateDBOpType, StateDBType, ValidationSets};
 use crate::version_store::VersionedStore;
 use crate::{TxnID, Value};
 
-const COMP_RESOLUTION: Duration = Duration::from_nanos(200);
+const COMP_RESOLUTION: Duration = Duration::from_nanos(150);
 // const COMP_RESOLUTION: Duration = Duration::ZERO;
 
 #[derive(Debug)]
@@ -154,13 +154,13 @@ impl Transaction for MockTransaction {
         //         (self.exec_time - elapsed, "-")
         //     };
         //     println!(
-        //         "Txn {} with {} ops took {:?}, expect {:?} (err: {}{:.1} ms)",
+        //         "Txn {} with {} ops took {:?}, expect {:?} (err: {}{:?})",
         //         id,
         //         self.ops.len(),
         //         elapsed,
         //         self.exec_time,
         //         sign,
-        //         err.as_nanos() as f64 / 1e6
+        //         err
         //     );
         // }
         Ok(statedb.into_validation_sets())

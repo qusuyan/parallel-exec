@@ -243,7 +243,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::storage::{CacheStore, DummyStore};
+    use crate::storage::{CacheStore, DummyStore, MockStoreBuilder};
     use crate::{
         AccountAddress, Block, Field, MockTransaction, StateDBOp, StateDBOpType, StateKey,
         StorageKey, StorageKeyType,
@@ -403,6 +403,115 @@ mod tests {
                 .collect()
             );
             assert!(duration > Duration::from_secs_f64(3.0));
+        });
+    }
+
+    #[test]
+    fn test_storage_access_happens_on_earlier_reads() {
+        let test_account = AccountAddress::from(13579u64);
+        let op0 = StateDBOp {
+            op_type: StateDBOpType::GetBalance,
+            account: test_account,
+            start_time: Duration::from_millis(700),
+            storage_time: Duration::from_millis(300),
+        };
+        let op1 = StateDBOp {
+            op_type: StateDBOpType::GetBalance,
+            account: test_account,
+            start_time: Duration::from_millis(300),
+            storage_time: Duration::from_millis(0), // cached
+        };
+
+        let mut mock_storage_builder = MockStoreBuilder::new();
+        mock_storage_builder.record_op(&op0);
+        mock_storage_builder.record_op(&op1);
+        let storage = Box::new(mock_storage_builder.build());
+
+        let txn0 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![op0]));
+        let txn1 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![op1]));
+        let block = Block {
+            id: 0,
+            transactions: vec![txn0.clone(), txn1.clone()],
+        };
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mut vm = SequentialValidationVM::new(
+                StateDBType::Basic,
+                CacheStore::new(0x1000, storage.clone()),
+            );
+            let start = std::time::Instant::now();
+            vm.process(block).await.unwrap();
+            let duration = start.elapsed();
+            println!("Total execution time: {:?}", duration);
+            let blk_write_set = vm.commit().await.unwrap();
+            assert_eq!(blk_write_set, HashMap::new(),);
+            assert!(duration > Duration::from_secs_f64(1.3));
+        });
+    }
+
+    #[test]
+    fn test_reexec_faster_due_to_caching() {
+        let test_account = AccountAddress::from(13579u64);
+        let test_state_key = StateKey::from(24680u64);
+        let op0 = StateDBOp {
+            op_type: StateDBOpType::SetState(test_state_key),
+            account: test_account,
+            start_time: Duration::from_millis(400),
+            storage_time: Duration::from_millis(100), // get account
+        };
+        let op1 = StateDBOp {
+            op_type: StateDBOpType::GetState(test_state_key),
+            account: test_account,
+            start_time: Duration::from_millis(500),
+            storage_time: Duration::from_millis(300), // get state
+        };
+
+        let mut mock_storage_builder = MockStoreBuilder::new();
+        mock_storage_builder.record_op(&op0);
+        mock_storage_builder.record_op(&op1);
+        let storage = Box::new(mock_storage_builder.build());
+
+        let txn0 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![op0]));
+        let txn1 = Arc::new(MockTransaction::new(Duration::from_secs(1), vec![op1]));
+        let block = Block {
+            id: 0,
+            transactions: vec![txn0.clone(), txn1.clone()],
+        };
+
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let mut vm = SequentialValidationVM::new(
+                StateDBType::Basic,
+                CacheStore::new(0x1000, storage.clone()),
+            );
+            let start = std::time::Instant::now();
+            vm.process(block).await.unwrap();
+            let duration = start.elapsed();
+            println!("Total execution time: {:?}", duration);
+            let blk_write_set = vm.commit().await.unwrap();
+            assert_eq!(
+                blk_write_set,
+                [(
+                    Key {
+                        address: test_account,
+                        field: Field::State(test_state_key),
+                    },
+                    (0, Value::zero(),)
+                )]
+                .into_iter()
+                .collect(),
+            );
+            assert!(duration > Duration::from_secs_f64(1.7));
+            assert!(duration < Duration::from_secs_f64(2.0));
         });
     }
 }

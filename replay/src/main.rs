@@ -136,7 +136,7 @@ fn main() {
 
                     let blk_id_parsed = u64::from_str(cur_blk_id)
                         .expect(&format!("{line_count}: Invalid block ID \"{cur_blk_id}\""));
-                    if blk_id_parsed % 100000 == 0 {
+                    if blk_id_parsed % 20000 == 0 {
                         println!("Processing block {blk_id_parsed}");
                     }
                     let new_block = Block {
