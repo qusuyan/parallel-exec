@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use tokio::time::{Duration, Instant};
 
 use super::{Transaction, TxnError};
-use crate::statedb::{StateDBOp, StateDBOpType, StateDBType, ValidationSets};
+use crate::statedb::{StateDBError, StateDBOp, StateDBOpType, StateDBType, ValidationSets};
 use crate::version_store::VersionedStore;
 use crate::{TxnID, Value};
 
@@ -37,6 +37,7 @@ impl Transaction for MockTransaction {
         id: TxnID,
         storage: &dyn VersionedStore,
         statedb_type: StateDBType,
+        early_stop: bool, // whether to stop execution early if we encounter a ReadInconsistentVersions error
     ) -> Result<ValidationSets, TxnError> {
         log::debug!(
             "{:?} Executing MockTransaction {id:x}",
@@ -79,60 +80,40 @@ impl Transaction for MockTransaction {
             //     start = Instant::now() - elapsed;
             // }
 
-            match op_type {
-                StateDBOpType::Exist => {
-                    statedb.exist(*account)?;
-                }
-                StateDBOpType::Empty => {
-                    statedb.empty(*account)?;
-                }
-                StateDBOpType::GetBalance => {
-                    statedb.get_balance(*account)?;
-                }
-                StateDBOpType::GetNonce => {
-                    statedb.get_nonce(*account)?;
-                }
-                StateDBOpType::GetCodeHash => {
-                    statedb.get_code_hash(*account)?;
-                }
-                StateDBOpType::GetCode => {
-                    statedb.get_code(*account)?;
-                }
-                StateDBOpType::GetState(state_key) => {
-                    statedb.get_state(*account, *state_key)?;
-                }
+            let op_err = match op_type {
+                StateDBOpType::Exist => statedb.exist(*account).err(),
+                StateDBOpType::Empty => statedb.empty(*account).err(),
+                StateDBOpType::GetBalance => statedb.get_balance(*account).err(),
+                StateDBOpType::GetNonce => statedb.get_nonce(*account).err(),
+                StateDBOpType::GetCodeHash => statedb.get_code_hash(*account).err(),
+                StateDBOpType::GetCode => statedb.get_code(*account).err(),
+                StateDBOpType::GetState(state_key) => statedb.get_state(*account, *state_key).err(),
                 StateDBOpType::GetCommittedState(state_key) => {
-                    statedb.get_committed_state(*account, *state_key)?;
+                    statedb.get_committed_state(*account, *state_key).err()
                 }
-                StateDBOpType::HasSelfDestructed => {
-                    statedb.has_self_destructed(*account)?;
-                }
+                StateDBOpType::HasSelfDestructed => statedb.has_self_destructed(*account).err(),
                 StateDBOpType::CheckEnoughBalance(amount) => {
-                    statedb.check_enough_balance(*account, *amount)?;
+                    statedb.check_enough_balance(*account, *amount).err()
                 }
-                StateDBOpType::AddBalance(amount) => {
-                    statedb.add_balance(*account, *amount)?;
+                StateDBOpType::AddBalance(amount) => statedb.add_balance(*account, *amount).err(),
+                StateDBOpType::SubBalance(amount) => statedb.sub_balance(*account, *amount).err(),
+                StateDBOpType::SetBalance(amount) => statedb.set_balance(*account, *amount).err(),
+                StateDBOpType::SetNonce => statedb.set_nonce(*account, Value::zero()).err(),
+                StateDBOpType::SetCode => statedb.set_code(*account, Value::zero()).err(),
+                StateDBOpType::SetState(state_key) => statedb.set_state(*account, *state_key).err(),
+                StateDBOpType::SelfDestruct => statedb.self_destruct(*account).err(),
+                StateDBOpType::CreateAccount => statedb.create_account(*account).err(),
+            };
+
+            match op_err {
+                None => {}
+                Some(StateDBError::ReadInconsistentVersions) => {
+                    if early_stop {
+                        return Err(StateDBError::ReadInconsistentVersions.into());
+                    }
                 }
-                StateDBOpType::SubBalance(amount) => {
-                    statedb.sub_balance(*account, *amount)?;
-                }
-                StateDBOpType::SetBalance(amount) => {
-                    statedb.set_balance(*account, *amount)?;
-                }
-                StateDBOpType::SetNonce => {
-                    statedb.set_nonce(*account, Value::zero())?;
-                }
-                StateDBOpType::SetCode => {
-                    statedb.set_code(*account, Value::zero())?;
-                }
-                StateDBOpType::SetState(state_key) => {
-                    statedb.set_state(*account, *state_key)?;
-                }
-                StateDBOpType::SelfDestruct => {
-                    statedb.self_destruct(*account)?;
-                }
-                StateDBOpType::CreateAccount => {
-                    statedb.create_account(*account)?;
+                Some(e) => {
+                    return Err(e.into());
                 }
             }
         }

@@ -392,7 +392,12 @@ impl BlockSTMVM {
                 Task::Execute { txn_id, incarnate } => {
                     let txn = &sched.txn_info[txn_id].txn;
                     let result = txn
-                        .execute(txn_id, mv_memory.as_ref(), statedb_type.clone())
+                        .execute(
+                            txn_id,
+                            mv_memory.as_ref(),
+                            statedb_type.clone(),
+                            incarnate != 0, // let first execution run to completion for storage prefetching
+                        )
                         .await;
                     match result {
                         Ok(ValidationSets {

@@ -23,7 +23,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::task::JoinError;
 
-#[derive(clap::ValueEnum, Clone, Debug)]
+#[derive(clap::ValueEnum, Clone, Debug, Copy)]
 pub enum VMType {
     Sequential,
     SequentialValidation,

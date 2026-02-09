@@ -6,6 +6,7 @@ use crate::version_store::VersionedStore;
 use crate::{AccountAddress, Field, Key, StateKey, TxnID, WriteOp};
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
 pub(crate) struct BasicStateDB<'a> {
     id: TxnID,
@@ -56,9 +57,15 @@ impl<'a> StateDBBase for BasicStateDB<'a> {
 
         // read from storage
         let (val, ver) = self.storage.get(self.id, &key)?;
-        if let Some(orig_v) = self.read_set.insert(key, ver) {
-            if orig_v != ver {
-                return Err(StateDBError::ReadInconsistentVersions);
+        match self.read_set.entry(key) {
+            Entry::Occupied(e) => {
+                if *e.get() != ver {
+                    return Err(StateDBError::ReadInconsistentVersions);
+                }
+            }
+            Entry::Vacant(e) => {
+                // only keep the oldest version read to guarantee failure during validation
+                e.insert(ver);
             }
         }
 

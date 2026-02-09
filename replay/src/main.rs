@@ -51,28 +51,15 @@ fn main() {
 
     env_logger::builder()
         .format(move |buf, record| {
-            let mut level_style = buf.style();
-            let level = match record.level() {
-                log::Level::Error => level_style
-                    .set_color(env_logger::fmt::Color::Red)
-                    .value("ERROR"),
-                log::Level::Warn => level_style
-                    .set_color(env_logger::fmt::Color::Yellow)
-                    .value("WARN "),
-                log::Level::Info => level_style
-                    .set_color(env_logger::fmt::Color::Green)
-                    .value("INFO "),
-                log::Level::Debug => level_style
-                    .set_color(env_logger::fmt::Color::Blue)
-                    .value("DEBUG"),
-                log::Level::Trace => level_style
-                    .set_color(env_logger::fmt::Color::Magenta)
-                    .value("TRACE"),
-            };
-            let mut target_style = buf.style();
-            let target = target_style.set_bold(true).value(record.target());
             let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.6f");
-            writeln!(buf, "{ts} {level} {target}: {}", record.args())
+            let level_style = buf.default_level_style(record.level());
+            writeln!(
+                buf,
+                "{ts} {level_style}{:<5}{level_style:#} {}: {}",
+                record.level(),
+                record.target(),
+                record.args()
+            )
         })
         .init();
 

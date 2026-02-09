@@ -110,6 +110,16 @@ pub struct MockStore {
     entries: HashMap<StorageKey, (Duration, Option<Value>)>,
 }
 
+impl MockStore {
+    pub fn new(entries: HashMap<StorageKey, (Duration, Option<Value>)>) -> Self {
+        MockStore { entries }
+    }
+
+    pub fn inner(&self) -> &HashMap<StorageKey, (Duration, Option<Value>)> {
+        &self.entries
+    }
+}
+
 impl Storage for MockStore {
     fn get(&self, key: &StorageKey) -> Option<Value> {
         let start_time = Instant::now();

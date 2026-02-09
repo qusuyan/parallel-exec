@@ -4,14 +4,29 @@ use parallel_exec::{
 };
 use primitive_types::U256;
 
+use rand::prelude::*;
 use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::Duration;
+
+fn test_rng() -> StdRng {
+    let seed = std::env::var("PARALLEL_EXEC_SEED")
+        .ok()
+        .and_then(|s| match s.parse::<u64>() {
+            Ok(num) => Some(num),
+            Err(_) => {
+                eprintln!("Invalid PARALLEL_EXEC_SEED value {}, use random seed", s);
+                None
+            }
+        })
+        .unwrap_or_else(|| rand::random());
+    eprintln!("Using seed {}", seed);
+    StdRng::seed_from_u64(seed)
+}
 
 fn generate_random_statedb_op(
     rng: &mut StdRng,
@@ -20,10 +35,10 @@ fn generate_random_statedb_op(
     write_set: &mut HashSet<StorageKey>,
     cache: &mut HashSet<StorageKey>,
 ) -> StateDBOp {
-    let op_type = rng.gen_range(0..=14); // do not test create & destruct since they are complicated to generate
+    let op_type = rng.random_range(0..=14); // do not test create & destruct since they are complicated to generate
     let address = accounts.choose(rng).unwrap().clone();
     let state_key = accounts.choose(rng).unwrap().clone();
-    let amount = U256::from(rng.gen_range(1u64..1000u64));
+    let amount = U256::from(rng.random_range(1u64..1000u64));
     let op_type = match op_type {
         0 => StateDBOpType::Exist,
         1 => StateDBOpType::Empty,
@@ -44,7 +59,7 @@ fn generate_random_statedb_op(
         // 16 => StateDBOpType::CreateAccount,
         _ => unreachable!(),
     };
-    let start_time = min_start_time + Duration::from_nanos(rng.gen_range(1000u64..10000u64));
+    let start_time = min_start_time + Duration::from_nanos(rng.random_range(1000u64..10000u64));
 
     let account_key = StorageKey {
         account: address,
@@ -54,7 +69,7 @@ fn generate_random_statedb_op(
         Duration::ZERO
     } else {
         cache.insert(account_key);
-        Duration::from_nanos(rng.gen_range(10000u64..1000000u64))
+        Duration::from_nanos(rng.random_range(10000u64..1000000u64))
     };
 
     let storage_time = base_storage_time
@@ -69,7 +84,7 @@ fn generate_random_statedb_op(
                     Duration::ZERO
                 } else {
                     cache.insert(key);
-                    Duration::from_nanos(rng.gen_range(10000u64..1000000u64))
+                    Duration::from_nanos(rng.random_range(10000u64..1000000u64))
                 }
             }
             StateDBOpType::GetState(sk) => {
@@ -82,7 +97,7 @@ fn generate_random_statedb_op(
                     Duration::ZERO
                 } else {
                     cache.insert(key);
-                    Duration::from_nanos(rng.gen_range(10000u64..1000000u64))
+                    Duration::from_nanos(rng.random_range(10000u64..1000000u64))
                 }
             }
             StateDBOpType::GetCommittedState(sk) => {
@@ -95,7 +110,7 @@ fn generate_random_statedb_op(
                     Duration::ZERO
                 } else {
                     cache.insert(key);
-                    Duration::from_nanos(rng.gen_range(10000u64..1000000u64))
+                    Duration::from_nanos(rng.random_range(10000u64..1000000u64))
                 }
             }
             StateDBOpType::SetCode => {
@@ -142,7 +157,7 @@ fn generate_random_txn(
         cur_time = op.start_time + op.storage_time;
         ops.push(op);
     }
-    let exec_time = cur_time + Duration::from_micros(rng.gen_range(0u64..1000u64));
+    let exec_time = cur_time + Duration::from_micros(rng.random_range(0u64..1000u64));
     let txn = MockTransaction::new(exec_time, ops);
 
     (
@@ -152,19 +167,7 @@ fn generate_random_txn(
 }
 
 fn generate_random_block(blk_id: u64) -> (Block, MockStore, Duration) {
-    let seed = std::env::var("PARALLEL_EXEC_SEED")
-        .ok()
-        .and_then(|s| match s.parse::<u64>() {
-            Ok(num) => Some(num),
-            Err(_) => {
-                eprintln!("Invalid PARALLEL_EXEC_SEED value {}, use random seed", s);
-                None
-            }
-        })
-        .unwrap_or_else(|| rand::random());
-    eprintln!("Using seed {}", seed);
-    let mut rng = StdRng::seed_from_u64(seed);
-
+    let mut rng = test_rng();
     let mut mock_store_builder = MockStoreBuilder::new();
     let mut cache = HashSet::new();
     let mut exec_time = Duration::from_secs(0);
@@ -173,10 +176,10 @@ fn generate_random_block(blk_id: u64) -> (Block, MockStore, Duration) {
     let mut transactions = Vec::with_capacity(num_txn);
 
     for _ in 0..num_txn {
-        let txn_size = rng.gen_range(30usize..1000);
-        let unique_accounts = rng.gen_range(2usize..20);
+        let txn_size = rng.random_range(30usize..1000);
+        let unique_accounts = rng.random_range(2usize..20);
         let accounts = (0..unique_accounts)
-            .map(|_| AccountAddress::from_little_endian(&rng.r#gen::<[u8; 32]>()))
+            .map(|_| AccountAddress::from_little_endian(&rng.random::<[u8; 32]>()))
             .collect::<Vec<_>>();
 
         let (txn, txn_exec_time) = generate_random_txn(

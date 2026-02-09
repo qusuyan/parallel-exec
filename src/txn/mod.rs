@@ -73,6 +73,7 @@ pub trait Transaction {
         id: TxnID,
         statedb: &dyn VersionedStore,
         statedb_type: StateDBType,
+        early_stop: bool,
     ) -> Result<ValidationSets, TxnError>;
 }
 

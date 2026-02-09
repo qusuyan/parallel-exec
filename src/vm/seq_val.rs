@@ -179,7 +179,7 @@ impl SequentialValidationVM {
                 Task::Exec { txn_id, txn } => {
                     log::debug!("handler {id}: executing txn {:x}", txn_id);
                     let exec_result = txn
-                        .execute(txn_id, storage.as_ref(), statedb_type.clone())
+                        .execute(txn_id, storage.as_ref(), statedb_type.clone(), false)
                         .await;
                     task_queue.add_validation_task(txn_id, txn, exec_result);
                 }
@@ -209,7 +209,7 @@ impl SequentialValidationVM {
                         None => {
                             reexec_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let exec_result = txn
-                                .execute(txn_id, storage.as_ref(), statedb_type.clone())
+                                .execute(txn_id, storage.as_ref(), statedb_type.clone(), true)
                                 .await
                                 .map_err(|error| VMError::TxnError { txn_id, error })?;
                             exec_result.write_set
